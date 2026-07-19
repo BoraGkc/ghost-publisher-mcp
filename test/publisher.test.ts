@@ -73,6 +73,104 @@ describe('publishing service', () => {
     expect(result.failed).toHaveLength(2);
   });
 
+  it('updates published metadata without changing status or triggering deployment', async () => {
+    const request = vi.fn();
+    const edit = vi.fn(async (...args: [Record<string, unknown>, Record<string, unknown>?]) =>
+      post({ ...args[0], status: 'published' }),
+    );
+    const ghost = {
+      posts: {
+        read: vi.fn(async () => post({ status: 'published' })),
+        edit,
+      },
+    };
+    const publisher = new GhostPublisher(
+      { ...baseConfig, deployHookUrl: 'https://deploy.example.com/hook' },
+      { ghost, fetch: request },
+    );
+
+    const updated = await publisher.updatePublishedPost({
+      id: 'a'.repeat(24),
+      updated_at: '2026-01-01T00:00:00.000Z',
+      meta_description: null,
+    });
+
+    expect(updated.status).toBe('published');
+    expect(edit.mock.calls[0]?.[0]).not.toHaveProperty('status');
+    expect(edit.mock.calls[0]?.[0]).not.toHaveProperty('html');
+    expect(edit.mock.calls[0]?.[0]).toMatchObject({ meta_description: null });
+    expect(edit.mock.calls[0]?.[1]).toEqual({ save_revision: true });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it.each(['draft', 'scheduled', 'sent', 'unknown'])('refuses published updates for %s posts', async (status) => {
+    const edit = vi.fn();
+    const publisher = new GhostPublisher(baseConfig, {
+      ghost: { posts: { read: vi.fn(async () => post({ status })), edit } },
+    });
+
+    await expect(
+      publisher.updatePublishedPost({
+        id: 'a'.repeat(24),
+        updated_at: '2026-01-01T00:00:00.000Z',
+        meta_title: 'New title',
+      }),
+    ).rejects.toThrow('only accepts published posts');
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  it('refuses stale published updates', async () => {
+    const edit = vi.fn();
+    const publisher = new GhostPublisher(baseConfig, {
+      ghost: { posts: { read: vi.fn(async () => post({ status: 'published', updated_at: 'newer' })), edit } },
+    });
+
+    await expect(
+      publisher.updatePublishedPost({ id: 'a'.repeat(24), updated_at: 'older', meta_title: 'New title' }),
+    ).rejects.toThrow('Post changed since it was read');
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  it('allows metadata changes regardless of body format because the body is never sent', async () => {
+    const edit = vi.fn(async (...args: [Record<string, unknown>, Record<string, unknown>?]) =>
+      post({ ...args[0], status: 'published' }),
+    );
+    const publisher = new GhostPublisher(baseConfig, {
+      ghost: {
+        posts: {
+          read: vi.fn(async () => post({ status: 'published', lexical: '{malformed rich content' })),
+          edit,
+        },
+      },
+    });
+
+    await publisher.updatePublishedPost({
+      id: 'a'.repeat(24),
+      updated_at: '2026-01-01T00:00:00.000Z',
+      meta_title: 'Safe metadata',
+    });
+
+    expect(edit.mock.calls[0]?.[0]).toMatchObject({ meta_title: 'Safe metadata' });
+    expect(edit.mock.calls[0]?.[1]).toEqual({ save_revision: true });
+  });
+
+  it('rejects body fields at the service boundary before reading or writing Ghost', async () => {
+    const read = vi.fn();
+    const edit = vi.fn();
+    const publisher = new GhostPublisher(baseConfig, { ghost: { posts: { read, edit } } });
+
+    await expect(
+      publisher.updatePublishedPost({
+        id: 'a'.repeat(24),
+        updated_at: '2026-01-01T00:00:00.000Z',
+        meta_title: 'Allowed field beside a forbidden one',
+        markdown: 'Forbidden body',
+      } as Parameters<typeof publisher.updatePublishedPost>[0]),
+    ).rejects.toThrow('bodies are read-only');
+    expect(read).not.toHaveBeenCalled();
+    expect(edit).not.toHaveBeenCalled();
+  });
+
   it('rejects duplicate transition targets before calling Ghost', async () => {
     const read = vi.fn();
     const edit = vi.fn();
@@ -119,7 +217,12 @@ describe('publishing service', () => {
     const request = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, status: 202 })
-      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => '<title>Live post</title>' });
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () =>
+          '<html><head><title>SEO &amp; title</title><meta content="Rendered description" name="description"><link href="https://site.example.com/posts/live-post" rel="canonical"></head><body><h1>Live &amp; post</h1></body></html>',
+      });
     const ghost = {
       posts: {
         read: vi.fn(async () => post()),
@@ -139,7 +242,15 @@ describe('publishing service', () => {
       [{ id: 'a'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' }],
       'published',
     );
-    const checks = await publisher.checkLivePosts([{ slug: 'live-post', title: 'Live post' }]);
+    const checks = await publisher.checkLivePosts([
+      {
+        slug: 'live-post',
+        title: 'Live & post',
+        expected_meta_title: 'SEO & title',
+        expected_meta_description: 'Rendered description',
+        expected_canonical_url: 'https://site.example.com/posts/live-post',
+      },
+    ]);
 
     expect(result.deploy).toEqual({ accepted: true, host: 'deploy.example.com', status: 202 });
     expect(checks).toEqual([
@@ -148,6 +259,10 @@ describe('publishing service', () => {
         url: 'https://site.example.com/posts/live-post',
         status: 200,
         title_match: true,
+        verified: true,
+        meta_title_match: true,
+        meta_description_match: true,
+        canonical_url_match: true,
       },
     ]);
   });

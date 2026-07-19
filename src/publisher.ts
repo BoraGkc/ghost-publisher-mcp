@@ -5,7 +5,7 @@ import { fileTypeFromBuffer } from 'file-type';
 import FormData from 'form-data';
 import MarkdownIt from 'markdown-it';
 import { redactSecrets, type Config } from './config.js';
-import type { BatchResult, DeployResult, DraftInput, ImageAsset, PostRef } from './types.js';
+import type { BatchResult, DeployResult, DraftInput, ImageAsset, PostRef, PublishedPostPatch } from './types.js';
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif']);
@@ -65,7 +65,28 @@ function postRef(post: any): PostRef {
   };
 }
 
-function ghostFields(input: Partial<DraftInput> & { slug?: string }): Record<string, unknown> {
+type GhostFieldInput = {
+  title?: string;
+  markdown?: string;
+  slug?: string;
+  tags?: string[];
+  excerpt?: string | null;
+  featured?: boolean;
+  feature_image_url?: string | null;
+  feature_image_alt?: string | null;
+  feature_image_caption?: string | null;
+  meta_title?: string | null;
+  meta_description?: string | null;
+  canonical_url?: string | null;
+  og_title?: string | null;
+  og_description?: string | null;
+  og_image?: string | null;
+  twitter_title?: string | null;
+  twitter_description?: string | null;
+  twitter_image?: string | null;
+};
+
+function ghostFields(input: GhostFieldInput): Record<string, unknown> {
   return {
     ...(input.title !== undefined ? { title: input.title } : {}),
     ...(input.slug !== undefined ? { slug: input.slug } : {}),
@@ -73,7 +94,7 @@ function ghostFields(input: Partial<DraftInput> & { slug?: string }): Record<str
     ...(input.tags ? { tags: input.tags.map((name) => ({ name })) } : {}),
     ...(input.excerpt !== undefined ? { custom_excerpt: input.excerpt } : {}),
     ...(input.featured !== undefined ? { featured: input.featured } : {}),
-    ...(input.feature_image_url ? { feature_image: input.feature_image_url } : {}),
+    ...(input.feature_image_url !== undefined ? { feature_image: input.feature_image_url } : {}),
     ...(input.feature_image_alt !== undefined ? { feature_image_alt: input.feature_image_alt } : {}),
     ...(input.feature_image_caption !== undefined
       ? { feature_image_caption: input.feature_image_caption }
@@ -154,6 +175,20 @@ export class GhostPublisher {
       ...postRef(post),
       html: String(post.html ?? ''),
       lexical: String(post.lexical ?? ''),
+      feature_image: post.feature_image ? String(post.feature_image) : null,
+      feature_image_alt: post.feature_image_alt == null ? null : String(post.feature_image_alt),
+      feature_image_caption: post.feature_image_caption == null ? null : String(post.feature_image_caption),
+      featured: Boolean(post.featured),
+      custom_excerpt: post.custom_excerpt == null ? null : String(post.custom_excerpt),
+      meta_title: post.meta_title == null ? null : String(post.meta_title),
+      meta_description: post.meta_description == null ? null : String(post.meta_description),
+      canonical_url: post.canonical_url == null ? null : String(post.canonical_url),
+      og_title: post.og_title == null ? null : String(post.og_title),
+      og_description: post.og_description == null ? null : String(post.og_description),
+      og_image: post.og_image == null ? null : String(post.og_image),
+      twitter_title: post.twitter_title == null ? null : String(post.twitter_title),
+      twitter_description: post.twitter_description == null ? null : String(post.twitter_description),
+      twitter_image: post.twitter_image == null ? null : String(post.twitter_image),
     };
   }
 
@@ -222,6 +257,24 @@ export class GhostPublisher {
     const updated = await this.ghost.posts.edit(
       { id: input.id, updated_at: input.updated_at, ...ghostFields(input) },
       input.markdown !== undefined ? { source: 'html' } : {},
+    );
+    return postRef(updated);
+  }
+
+  async updatePublishedPost(
+    input: PublishedPostPatch & { id: string; updated_at: string },
+  ): Promise<PostRef> {
+    if ('markdown' in input || 'html' in input || 'lexical' in input) {
+      throw new Error('Published article bodies are read-only');
+    }
+    const current = await this.ghost.posts.read({ id: input.id }, { include: 'tags' });
+    if (current.status !== 'published') throw new Error('update_published_post only accepts published posts');
+    if (String(current.updated_at) !== input.updated_at) {
+      throw new Error('Post changed since it was read; fetch it again before updating');
+    }
+    const updated = await this.ghost.posts.edit(
+      { id: input.id, updated_at: input.updated_at, ...ghostFields(input) },
+      { save_revision: true },
     );
     return postRef(updated);
   }
@@ -344,7 +397,15 @@ export class GhostPublisher {
     return { accepted: response.ok, host: url.host, status: response.status };
   }
 
-  async checkLivePosts(posts: { slug: string; title: string }[]) {
+  async checkLivePosts(
+    posts: {
+      slug: string;
+      title: string;
+      expected_meta_title?: string;
+      expected_meta_description?: string;
+      expected_canonical_url?: string;
+    }[],
+  ) {
     if (!this.config.publicPostUrlTemplate) {
       throw new Error('GHOST_PUBLIC_POST_URL_TEMPLATE is not configured');
     }
@@ -354,11 +415,32 @@ export class GhostPublisher {
         try {
           const response = await this.request(url, { signal: AbortSignal.timeout(15_000) });
           const body = await response.text();
+          const rendered = renderedMetadata(body);
+          const titleMatch = response.ok && decodeHtml(body.replace(/<[^>]+>/g, ' ')).includes(post.title);
+          const metaTitleMatch =
+            post.expected_meta_title === undefined || rendered.title === post.expected_meta_title;
+          const metaDescriptionMatch =
+            post.expected_meta_description === undefined ||
+            rendered.description === post.expected_meta_description;
+          const canonicalUrlMatch =
+            post.expected_canonical_url === undefined ||
+            rendered.canonical === post.expected_canonical_url;
           return {
             slug: post.slug,
             url,
             status: response.status,
-            title_match: response.ok && body.includes(post.title),
+            title_match: titleMatch,
+            verified:
+              response.ok && titleMatch && metaTitleMatch && metaDescriptionMatch && canonicalUrlMatch,
+            ...(post.expected_meta_title !== undefined
+              ? { meta_title_match: response.ok && metaTitleMatch }
+              : {}),
+            ...(post.expected_meta_description !== undefined
+              ? { meta_description_match: response.ok && metaDescriptionMatch }
+              : {}),
+            ...(post.expected_canonical_url !== undefined
+              ? { canonical_url_match: response.ok && canonicalUrlMatch }
+              : {}),
           };
         } catch (error) {
           return {
@@ -366,10 +448,52 @@ export class GhostPublisher {
             url,
             status: 0,
             title_match: false,
+            verified: false,
             error: errorMessage(error, this.config),
           };
         }
       }),
     );
   }
+}
+
+function decodeHtml(value: string): string {
+  const named: Record<string, string> = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: '\u00a0' };
+  return value.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (entity, code: string) => {
+    const numeric = code.startsWith('#x')
+      ? Number.parseInt(code.slice(2), 16)
+      : code.startsWith('#')
+        ? Number.parseInt(code.slice(1), 10)
+        : undefined;
+    if (numeric !== undefined) {
+      return Number.isInteger(numeric) && numeric >= 0 && numeric <= 0x10ffff
+        ? String.fromCodePoint(numeric)
+        : entity;
+    }
+    return named[code.toLowerCase()] ?? entity;
+  });
+}
+
+function tagAttribute(tag: string, name: string): string | undefined {
+  const match = tag.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i'));
+  const value = match?.[1] ?? match?.[2] ?? match?.[3];
+  return value === undefined ? undefined : decodeHtml(value);
+}
+
+function renderedMetadata(html: string): { title?: string; description?: string; canonical?: string } {
+  const title = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1];
+  const meta = html.match(/<meta\b[^>]*>/gi) ?? [];
+  const descriptionTag = meta.find((tag) => tagAttribute(tag, 'name')?.toLowerCase() === 'description');
+  const links = html.match(/<link\b[^>]*>/gi) ?? [];
+  const canonicalTag = links.find((tag) =>
+    (tagAttribute(tag, 'rel') ?? '')
+      .toLowerCase()
+      .split(/\s+/)
+      .includes('canonical'),
+  );
+  return {
+    ...(title !== undefined ? { title: decodeHtml(title.replace(/<[^>]+>/g, '').trim()) } : {}),
+    ...(descriptionTag ? { description: tagAttribute(descriptionTag, 'content') } : {}),
+    ...(canonicalTag ? { canonical: tagAttribute(canonicalTag, 'href') } : {}),
+  };
 }

@@ -6,17 +6,17 @@
 - Local checkout: `/Users/boragokce/Documents/Codex/2026-07-02/https-ortakalan-io/ghost-publisher-mcp`
 - Branch: `main`
 - Runtime: Node.js 22+, TypeScript, ESM, local stdio MCP
-- Package target: `ghost-publisher-mcp@0.1.0`
+- Package target: `ghost-publisher-mcp@0.2.0`
 
 This is intentionally separate from the private Ortak Alan Astro repository.
 
 ## Product boundary
 
-Ghost Publisher is a safe editorial workflow, not a complete Ghost Admin API mirror. It exposes 11 tools:
+Ghost Publisher is a safe editorial workflow, not a complete Ghost Admin API mirror. It exposes 12 tools:
 
-`check_connection`, `list_posts`, `get_post`, `list_tags`, `create_drafts`, `update_draft`, `upload_image`, `publish_posts`, `unpublish_posts`, `trigger_deploy`, and `check_live_posts`.
+`check_connection`, `list_posts`, `get_post`, `list_tags`, `create_drafts`, `update_draft`, `update_published_post`, `upload_image`, `publish_posts`, `unpublish_posts`, `trigger_deploy`, and `check_live_posts`.
 
-Draft creation cannot publish. Updates and status changes require the current `updated_at`. Publish/unpublish batches are preflighted before the first write, and deployment runs only after a completely successful batch.
+Draft creation cannot publish. Updates and status changes require the current `updated_at`. Published updates are metadata-only, save a Ghost revision, and preserve status. Publish/unpublish batches are preflighted before the first write, and deployment runs only after a completely successful batch.
 
 ## Image decision
 
@@ -30,12 +30,12 @@ An MCP subprocess cannot directly invoke a separate tool owned by its host, so t
 - README, MIT license, security policy, contributing guide, and changelog exist.
 - Public GitHub repository is created and `main` tracks `origin/main`.
 - CI, Ghost 5/6 integration, and npm release workflows are implemented.
-- `npm run check` passes: typecheck, lint, 9 unit tests, and build.
+- `npm run check` passes: typecheck, lint, 18 unit tests, and build.
 - `npm audit --audit-level=high` reports zero vulnerabilities.
 - `npm pack --dry-run` succeeds.
-- Node.js 22/24 CI and the disposable Ghost 5/6 release gate pass, including real image upload and the full create/update/publish/unpublish lifecycle.
+- Node.js 22/24 CI and disposable Ghost 5/6 release-gate workflows are configured. The integration flow includes a published-post metadata update; run it before any live-site acceptance because Docker is unavailable in the current local environment.
 - Official MCP Registry metadata is prepared as `server.json` with package verification via `mcpName`.
-- A read-only smoke test authenticated against the existing Ghost site and confirmed 11 tools with no `generate_image` tool.
+- The Ghost + hosted OpenSEO hybrid workflow and versioned optimizer skill are prepared for Ortak Alan acceptance testing.
 
 Recent commits:
 
@@ -64,10 +64,13 @@ Never commit credentials. The Ghost Admin key previously shared in chat should b
 
 ## Next work
 
-1. Recheck the npm package name, reserve it, and publish `0.1.0` with npm provenance.
-2. Replace the bootstrap npm token with trusted publishing and revoke the token.
-3. Publish `server.json` to the official MCP Registry and submit the repository to MCP Market's free queue.
-4. Configure the published package in Codex and run the acceptance flow: upload images, create three drafts, approve, publish, deploy, and verify live URLs.
+1. Run the disposable Ghost 5 and Ghost 6 integration workflow and require both jobs to pass.
+2. Run the Ortak Alan workflow in proposal-only mode, using free/cached evidence before any approved paid OpenSEO calls.
+3. Approve one low-risk metadata-only patch, confirm its Ghost revision exists, deploy once, and verify rendered metadata on the public URL.
+4. Commit, push, tag, and publish `0.2.0` with npm provenance only after those gates pass.
+5. Replace the bootstrap npm token with trusted publishing and revoke the token.
+6. Publish `server.json` to the official MCP Registry and submit the repository to MCP Market's free queue.
+7. Configure the published package in Codex and run the draft acceptance flow: upload images, create three drafts, approve, publish, deploy, and verify live URLs.
 
 Do not add pages, newsletters, members, themes, arbitrary API execution, remote image URLs, OAuth, remote HTTP transport, or Docker runtime support unless real demand justifies the added security surface.
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ghost SEO Optimizer"
+  short_description: "Optimize Ghost posts with OpenSEO evidence"
+  default_prompt: "Use $ghost-seo-optimizer to audit one published Ghost post with OpenSEO evidence and prepare an approval-ready patch."

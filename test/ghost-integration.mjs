@@ -91,8 +91,21 @@ try {
   });
   const published = await publisher.transitionPosts([{ id: updated.id, updated_at: updated.updated_at }], 'published');
   assert.equal(published.succeeded[0]?.status, 'published');
+  const publishedDetails = await publisher.getPost(published.succeeded[0].id);
+  const optimized = await publisher.updatePublishedPost({
+    id: publishedDetails.id,
+    updated_at: publishedDetails.updated_at,
+    meta_title: 'Integration SEO title',
+    meta_description: 'Updated published SEO metadata',
+  });
+  assert.equal(optimized.status, 'published');
+  const optimizedDetails = await publisher.getPost(optimized.id);
+  assert.equal(optimizedDetails.status, 'published');
+  assert.equal(optimizedDetails.meta_title, 'Integration SEO title');
+  assert.equal(optimizedDetails.meta_description, 'Updated published SEO metadata');
+  assert.match(optimizedDetails.html, /It works/);
   const unpublished = await publisher.transitionPosts(
-    [{ id: published.succeeded[0].id, updated_at: published.succeeded[0].updated_at }],
+    [{ id: optimized.id, updated_at: optimized.updated_at }],
     'draft',
   );
   assert.equal(unpublished.succeeded[0]?.status, 'draft');

@@ -15,6 +15,25 @@ const postRefSchema = z.object({
   tags: z.array(z.string()),
 });
 
+const postDetailsSchema = postRefSchema.omit({ custom_excerpt: true }).extend({
+  html: z.string(),
+  lexical: z.string(),
+  feature_image: z.string().nullable(),
+  feature_image_alt: z.string().nullable(),
+  feature_image_caption: z.string().nullable(),
+  featured: z.boolean(),
+  custom_excerpt: z.string().nullable(),
+  meta_title: z.string().nullable(),
+  meta_description: z.string().nullable(),
+  canonical_url: z.string().nullable(),
+  og_title: z.string().nullable(),
+  og_description: z.string().nullable(),
+  og_image: z.string().nullable(),
+  twitter_title: z.string().nullable(),
+  twitter_description: z.string().nullable(),
+  twitter_image: z.string().nullable(),
+});
+
 const deploySchema = z.object({
   accepted: z.boolean(),
   host: z.string(),
@@ -72,6 +91,26 @@ const draftPatchSchema = draftSchema.partial().refine((patch) => Object.keys(pat
   message: 'Provide at least one field to update',
 });
 
+const nullableText = (max: number) => z.string().max(max).nullable();
+const publishedPatchSchema = z
+  .object({
+    title: z.string().min(1).max(300).optional(),
+    excerpt: nullableText(500).optional(),
+    feature_image_alt: nullableText(500).optional(),
+    feature_image_caption: nullableText(1000).optional(),
+    meta_title: nullableText(300).optional(),
+    meta_description: nullableText(500).optional(),
+    canonical_url: z.url().nullable().optional(),
+    og_title: nullableText(300).optional(),
+    og_description: nullableText(500).optional(),
+    og_image: z.url().nullable().optional(),
+    twitter_title: nullableText(300).optional(),
+    twitter_description: nullableText(500).optional(),
+    twitter_image: z.url().nullable().optional(),
+  })
+  .strict()
+  .refine((patch) => Object.keys(patch).length > 0, { message: 'Provide at least one field to update' });
+
 const targetSchema = z.object({
   id: z.string().regex(/^[a-f\d]{24}$/i, 'Expected a 24-character Ghost ID'),
   updated_at: z.string().min(1),
@@ -92,10 +131,10 @@ function failure(error: unknown, config: Config) {
 
 export function createServer(publisher: GhostPublisher): McpServer {
   const server = new McpServer(
-    { name: 'ghost-publisher-mcp', version: '0.1.0' },
+    { name: 'ghost-publisher-mcp', version: '0.2.0' },
     {
       instructions:
-        'Create drafts first. Before updating, publishing, or unpublishing, read posts and pass exact id and updated_at values. Publish only after explicit user approval. When the AI client generates an image, save it locally, call upload_image, then attach its URL with create_drafts or update_draft. After publishing, report deployment and live checks.',
+        'Create drafts first. Before updating, publishing, or unpublishing, read posts and pass exact id and updated_at values. Publish or update a published post only after explicit user approval for that exact post and patch. Apply published updates one post at a time, then trigger one configured deploy and check the live URL. When the AI client generates an image, save it locally, call upload_image, then attach its URL with create_drafts or update_draft.',
     },
   );
   const fail = (error: unknown) => failure(error, publisher.config);
@@ -156,9 +195,9 @@ export function createServer(publisher: GhostPublisher): McpServer {
     'get_post',
     {
       title: 'Get a Ghost post',
-      description: 'Get one post by its exact Ghost ID or slug, including HTML and Lexical content.',
+      description: 'Get one post by its exact Ghost ID or slug, including HTML, Lexical content, and complete SEO and social metadata.',
       inputSchema: z.object({ id_or_slug: z.string().min(1) }),
-      outputSchema: z.object({ post: postRefSchema.extend({ html: z.string(), lexical: z.string() }) }),
+      outputSchema: z.object({ post: postDetailsSchema }),
       annotations: readOnly,
     },
     async ({ id_or_slug }) => {
@@ -236,6 +275,25 @@ export function createServer(publisher: GhostPublisher): McpServer {
   );
 
   server.registerTool(
+    'update_published_post',
+    {
+      title: 'Update a published Ghost post',
+      description: 'Update approved metadata on one published post after explicit user approval for the exact post and patch. Uses updated_at collision protection, saves a Ghost revision, preserves published status, and never replaces the body.',
+      inputSchema: z.object({ id: targetSchema.shape.id, updated_at: z.string().min(1), patch: publishedPatchSchema }),
+      outputSchema: z.object({ post: postRefSchema }),
+      annotations: destructive,
+    },
+    async ({ id, updated_at, patch }) => {
+      try {
+        const post = await publisher.updatePublishedPost({ id, updated_at, ...patch });
+        return success({ post }, `Updated published post ${post.title}`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
     'upload_image',
     {
       title: 'Upload an image to Ghost',
@@ -300,9 +358,20 @@ export function createServer(publisher: GhostPublisher): McpServer {
     'check_live_posts',
     {
       title: 'Check public post URLs',
-      description: 'Check configured public URLs once and report HTTP status plus whether each expected title appears.',
+      description: 'Check configured public URLs once and verify HTTP status, expected title text, and any supplied rendered SEO metadata.',
       inputSchema: z.object({
-        posts: z.array(z.object({ slug: slugSchema, title: z.string().min(1) })).min(1).max(25),
+        posts: z
+          .array(
+            z.object({
+              slug: slugSchema,
+              title: z.string().min(1),
+              expected_meta_title: z.string().min(1).optional(),
+              expected_meta_description: z.string().min(1).optional(),
+              expected_canonical_url: z.url().optional(),
+            }),
+          )
+          .min(1)
+          .max(25),
       }),
       outputSchema: z.object({
         posts: z.array(
@@ -311,6 +380,10 @@ export function createServer(publisher: GhostPublisher): McpServer {
             url: z.string(),
             status: z.number(),
             title_match: z.boolean(),
+            verified: z.boolean(),
+            meta_title_match: z.boolean().optional(),
+            meta_description_match: z.boolean().optional(),
+            canonical_url_match: z.boolean().optional(),
             error: z.string().optional(),
           }),
         ),
@@ -320,7 +393,7 @@ export function createServer(publisher: GhostPublisher): McpServer {
     async ({ posts }) => {
       try {
         const checks = await publisher.checkLivePosts(posts);
-        return success({ posts: checks }, `${checks.filter((check) => check.title_match).length}/${checks.length} live`);
+        return success({ posts: checks }, `${checks.filter((check) => check.verified).length}/${checks.length} verified`);
       } catch (error) {
         return fail(error);
       }

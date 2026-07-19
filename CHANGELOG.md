@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+- Add approval-gated, revision-saving updates for published posts with optimistic locking.
+- Return complete SEO and social metadata from `get_post`.
+- Keep published article bodies read-only; live optimization patches are metadata-only.
+- Verify optional rendered meta title, description, and canonical URL in public checks.
+- Add the versioned Ghost + OpenSEO optimizer agent skill and hybrid implementation plan.
+
 ## 0.1.1
 
 - Match the MCP Registry namespace to the canonical GitHub username casing.
