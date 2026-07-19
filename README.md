@@ -137,7 +137,7 @@ Run the local build with an MCP client:
 }
 ```
 
-Tests mock Ghost and never invoke an image-generation provider.
+Unit tests mock Ghost and never invoke an image-generation provider. The opt-in integration workflow uses disposable Ghost 5 and Ghost 6 containers, never the configured live site.
 
 ## License
 

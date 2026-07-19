@@ -29,9 +29,12 @@ An MCP subprocess cannot directly invoke a separate tool owned by its host, so t
 - Core server, typed schemas, Markdown-to-HTML conversion, Ghost operations, local image upload, deploy hook, and live checks are implemented.
 - README, MIT license, security policy, contributing guide, and changelog exist.
 - Public GitHub repository is created and `main` tracks `origin/main`.
-- `npm run check` passes: typecheck, lint, 7 unit tests, and build.
+- CI, Ghost 5/6 integration, and npm release workflows are implemented.
+- `npm run check` passes: typecheck, lint, 9 unit tests, and build.
 - `npm audit --audit-level=high` reports zero vulnerabilities.
 - `npm pack --dry-run` succeeds.
+- Node.js 22/24 CI and the disposable Ghost 5/6 release gate pass, including real image upload and the full create/update/publish/unpublish lifecycle.
+- Official MCP Registry metadata is prepared as `server.json` with package verification via `mcpName`.
 - A read-only smoke test authenticated against the existing Ghost site and confirmed 11 tools with no `generate_image` tool.
 
 Recent commits:
@@ -61,11 +64,10 @@ Never commit credentials. The Ghost Admin key previously shared in chat should b
 
 ## Next work
 
-1. Add GitHub Actions for Node.js 22 and 24: typecheck, lint, tests, build, audit, and package-content verification.
-2. Run the release-gate integration workflow against current Ghost 5 and Ghost 6 containers.
-3. Add an MCP Inspector smoke test if it can remain reliable in CI.
-4. Recheck the npm package name, reserve it, and publish `0.1.0` with npm provenance.
-5. Configure the published package in Codex and run the acceptance flow: upload images, create three drafts, approve, publish, deploy, and verify live URLs.
+1. Recheck the npm package name, reserve it, and publish `0.1.0` with npm provenance.
+2. Replace the bootstrap npm token with trusted publishing and revoke the token.
+3. Publish `server.json` to the official MCP Registry and submit the repository to MCP Market's free queue.
+4. Configure the published package in Codex and run the acceptance flow: upload images, create three drafts, approve, publish, deploy, and verify live URLs.
 
 Do not add pages, newsletters, members, themes, arbitrary API execution, remote image URLs, OAuth, remote HTTP transport, or Docker runtime support unless real demand justifies the added security surface.
 
