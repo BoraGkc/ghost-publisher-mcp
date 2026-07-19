@@ -1,11 +1,24 @@
 /* global console, fetch, process, setTimeout */
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import GhostAdminAPI from '@tryghost/admin-api';
 import { GhostPublisher } from '../dist/publisher.js';
 
 const ghostUrl = process.env.GHOST_INTEGRATION_URL ?? 'http://localhost:2368';
 const email = 'owner@example.com';
 const password = 'correct horse battery staple 2026';
+const uploadRoot = await mkdtemp(path.join(tmpdir(), 'ghost-publisher-integration-'));
+const imagePath = path.join(uploadRoot, 'pixel.png');
+await writeFile(
+  imagePath,
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZJ3gAAAAASUVORK5CYII=',
+    'base64',
+  ),
+);
 
 async function request(path, options = {}) {
   const response = await fetch(`${ghostUrl}${path}`, options);
@@ -54,13 +67,17 @@ const config = {
   ghostUrl,
   ghostAdminApiKey: adminKey,
   ghostApiVersion: 'v5.0',
-  uploadRoots: [],
+  uploadRoots: [uploadRoot],
 };
 const publisher = new GhostPublisher(config);
 const api = new GhostAdminAPI({ url: ghostUrl, key: adminKey, version: 'v5.0' });
 let created;
 
 try {
+  const image = await publisher.uploadImage(imagePath);
+  assert.equal(image.mime_type, 'image/png');
+  assert.match(image.url, /^https?:\/\//);
+
   const slug = `ghost-publisher-integration-${Date.now()}`;
   const batch = await publisher.createDrafts([{ title: 'Integration draft', slug, markdown: '# It works' }]);
   assert.equal(batch.failed.length, 0);
@@ -82,4 +99,5 @@ try {
   console.log(`Ghost ${process.env.GHOST_IMAGE ?? ''} integration passed`);
 } finally {
   if (created) await api.posts.delete({ id: created.id });
+  await rm(uploadRoot, { recursive: true, force: true });
 }

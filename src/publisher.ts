@@ -254,6 +254,9 @@ export class GhostPublisher {
     targets: TransitionTarget[],
     status: 'draft' | 'published',
   ): Promise<BatchResult> {
+    if (new Set(targets.map((target) => target.id)).size !== targets.length) {
+      throw new Error('Post IDs must be unique within the batch');
+    }
     const expected = status === 'published' ? 'draft' : 'published';
     const preflight = await this.validateTransitions(targets, expected);
     if (preflight.errors.size) {

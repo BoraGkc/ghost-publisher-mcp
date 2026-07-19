@@ -73,6 +73,19 @@ describe('publishing service', () => {
     expect(result.failed).toHaveLength(2);
   });
 
+  it('rejects duplicate transition targets before calling Ghost', async () => {
+    const read = vi.fn();
+    const edit = vi.fn();
+    const publisher = new GhostPublisher(baseConfig, { ghost: { posts: { read, edit } } });
+    const target = { id: 'a'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' };
+
+    await expect(publisher.transitionPosts([target, target], 'published')).rejects.toThrow(
+      'Post IDs must be unique within the batch',
+    );
+    expect(read).not.toHaveBeenCalled();
+    expect(edit).not.toHaveBeenCalled();
+  });
+
   it('reports partial writes and does not deploy after a failed batch', async () => {
     const request = vi.fn();
     const ghost = {
@@ -100,6 +113,43 @@ describe('publishing service', () => {
     expect(result.succeeded).toHaveLength(1);
     expect(result.failed).toHaveLength(1);
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it('deploys after a complete transition and checks the configured live URL', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 202 })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => '<title>Live post</title>' });
+    const ghost = {
+      posts: {
+        read: vi.fn(async () => post()),
+        edit: vi.fn(async () => post({ status: 'published' })),
+      },
+    };
+    const publisher = new GhostPublisher(
+      {
+        ...baseConfig,
+        deployHookUrl: 'https://deploy.example.com/hook',
+        publicPostUrlTemplate: 'https://site.example.com/posts/{slug}',
+      },
+      { ghost, fetch: request },
+    );
+
+    const result = await publisher.transitionPosts(
+      [{ id: 'a'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' }],
+      'published',
+    );
+    const checks = await publisher.checkLivePosts([{ slug: 'live-post', title: 'Live post' }]);
+
+    expect(result.deploy).toEqual({ accepted: true, host: 'deploy.example.com', status: 202 });
+    expect(checks).toEqual([
+      {
+        slug: 'live-post',
+        url: 'https://site.example.com/posts/live-post',
+        status: 200,
+        title_match: true,
+      },
+    ]);
   });
 
   it('allows image files only inside configured roots and blocks symlink escapes', async () => {
