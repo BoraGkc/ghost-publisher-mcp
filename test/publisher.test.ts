@@ -11,6 +11,7 @@ const baseConfig: Config = {
   ghostUrl: 'https://ghost.example.com',
   ghostAdminApiKey: key,
   ghostApiVersion: 'v5.0',
+  readOnly: false,
   uploadRoots: [],
 };
 
@@ -46,6 +47,37 @@ describe('publishing service', () => {
     expect(result.succeeded).toHaveLength(1);
     expect(add.mock.calls[0]?.[0]).toMatchObject({ slug: 'icerik-soleni', status: 'draft' });
     expect(String(add.mock.calls[0]?.[0]?.html)).toContain('&lt;script&gt;');
+  });
+
+  it('requires explicit confirmation before replacing a draft body', async () => {
+    const read = vi.fn(async () => post());
+    const edit = vi.fn(async (data) => post(data));
+    const publisher = new GhostPublisher(baseConfig, { ghost: { posts: { read, edit } } });
+    const target = { id: 'a'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' };
+
+    await expect(publisher.updateDraft({ ...target, markdown: '# Replacement' })).rejects.toThrow(
+      'body_replacement_confirmed=true',
+    );
+    expect(read).not.toHaveBeenCalled();
+    expect(edit).not.toHaveBeenCalled();
+
+    await publisher.updateDraft({ ...target, markdown: '# Replacement', body_replacement_confirmed: true });
+    expect(edit.mock.calls[0]?.[0]).toMatchObject({ html: '<h1>Replacement</h1>\n' });
+  });
+
+  it('keeps metadata-only draft updates compatible without body confirmation', async () => {
+    const edit = vi.fn(async (data) => post(data));
+    const publisher = new GhostPublisher(baseConfig, {
+      ghost: { posts: { read: vi.fn(async () => post()), edit } },
+    });
+
+    await publisher.updateDraft({
+      id: 'a'.repeat(24),
+      updated_at: '2026-01-01T00:00:00.000Z',
+      excerpt: 'Metadata only',
+    });
+
+    expect(edit.mock.calls[0]?.[0]).toMatchObject({ custom_excerpt: 'Metadata only' });
   });
 
   it('aborts a whole transition when preflight finds a stale post', async () => {
@@ -242,6 +274,7 @@ describe('publishing service', () => {
       [{ id: 'a'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' }],
       'published',
     );
+    expect(request).toHaveBeenCalledTimes(1);
     const checks = await publisher.checkLivePosts([
       {
         slug: 'live-post',
@@ -265,6 +298,52 @@ describe('publishing service', () => {
         canonical_url_match: true,
       },
     ]);
+  });
+
+  it('preserves successful transitions when the single deploy request is rejected', async () => {
+    const request = vi.fn(async () => ({ ok: false, status: 503 } as Response));
+    const publisher = new GhostPublisher(
+      { ...baseConfig, deployHookUrl: 'https://deploy.example.com/hook' },
+      {
+        ghost: {
+          posts: {
+            read: vi.fn(async () => post()),
+            edit: vi.fn(async () => post({ status: 'published' })),
+          },
+        },
+        fetch: request,
+      },
+    );
+
+    const result = await publisher.transitionPosts(
+      [{ id: 'a'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' }],
+      'published',
+    );
+
+    expect(result.succeeded).toHaveLength(1);
+    expect(result.deploy).toEqual({
+      accepted: false,
+      host: 'deploy.example.com',
+      status: 503,
+      error: 'Deploy hook returned HTTP 503',
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a redacted network deployment failure without retrying', async () => {
+    const hook = 'https://deploy.example.com/private?token=secret';
+    const request = vi.fn(async () => Promise.reject(new Error(`request to ${hook} failed`)));
+    const publisher = new GhostPublisher({ ...baseConfig, deployHookUrl: hook }, { ghost: {}, fetch: request });
+
+    const deploy = await publisher.triggerDeploy();
+
+    expect(deploy).toEqual({
+      accepted: false,
+      host: 'deploy.example.com',
+      status: 0,
+      error: 'request to [REDACTED] failed',
+    });
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it('allows image files only inside configured roots and blocks symlink escapes', async () => {

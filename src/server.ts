@@ -38,6 +38,7 @@ const deploySchema = z.object({
   accepted: z.boolean(),
   host: z.string(),
   status: z.number(),
+  error: z.string().optional(),
 });
 
 const batchSchema = z.object({
@@ -66,6 +67,8 @@ const slugSchema = z
   .max(190)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must contain lowercase ASCII words separated by hyphens');
 
+const ghostIdSchema = z.string().regex(/^[a-f\d]{24}$/i, 'Expected a 24-character Ghost ID');
+
 const draftSchema = z.object({
   title: z.string().min(1).max(300),
   markdown: z.string().min(1),
@@ -91,6 +94,18 @@ const draftPatchSchema = draftSchema.partial().refine((patch) => Object.keys(pat
   message: 'Provide at least one field to update',
 });
 
+const updateDraftSchema = z
+  .object({
+    id: ghostIdSchema,
+    updated_at: z.string().min(1),
+    patch: draftPatchSchema,
+    body_replacement_confirmed: z.literal(true).optional(),
+  })
+  .refine((input) => input.patch.markdown === undefined || input.body_replacement_confirmed === true, {
+    message: 'Replacing a draft body requires body_replacement_confirmed=true',
+    path: ['body_replacement_confirmed'],
+  });
+
 const nullableText = (max: number) => z.string().max(max).nullable();
 const publishedPatchSchema = z
   .object({
@@ -112,7 +127,7 @@ const publishedPatchSchema = z
   .refine((patch) => Object.keys(patch).length > 0, { message: 'Provide at least one field to update' });
 
 const targetSchema = z.object({
-  id: z.string().regex(/^[a-f\d]{24}$/i, 'Expected a 24-character Ghost ID'),
+  id: ghostIdSchema,
   updated_at: z.string().min(1),
 });
 
@@ -120,8 +135,12 @@ const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: t
 const write = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
 const destructive = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
 
-function success(data: Record<string, unknown>, text: string) {
-  return { content: [{ type: 'text' as const, text }], structuredContent: data };
+function success(data: Record<string, unknown>, text: string, isError = false) {
+  return {
+    content: [{ type: 'text' as const, text }],
+    structuredContent: data,
+    ...(isError ? { isError: true as const } : {}),
+  };
 }
 
 function failure(error: unknown, config: Config) {
@@ -134,7 +153,7 @@ export function createServer(publisher: GhostPublisher): McpServer {
     { name: 'ghost-publisher-mcp', version: '0.2.0' },
     {
       instructions:
-        'Create drafts first. Before updating, publishing, or unpublishing, read posts and pass exact id and updated_at values. Publish or update a published post only after explicit user approval for that exact post and patch. Apply published updates one post at a time, then trigger one configured deploy and check the live URL. When the AI client generates an image, save it locally, call upload_image, then attach its URL with create_drafts or update_draft.',
+        'Create drafts first. Before updating, publishing, or unpublishing, read posts and pass exact id and updated_at values. Destructive tools require user_confirmed=true after explicit approval for the exact action. Markdown draft updates replace the complete body and require body_replacement_confirmed=true. Successful publish and unpublish batches deploy exactly once when configured; published metadata updates require one separate approved trigger_deploy call. When the AI client generates an image, save it locally, call upload_image, then attach its URL with create_drafts or update_draft.',
     },
   );
   const fail = (error: unknown) => failure(error, publisher.config);
@@ -149,7 +168,9 @@ export function createServer(publisher: GhostPublisher): McpServer {
         configuration: z.object({
           ghost_url: z.string(),
           ghost_api_version: z.string(),
+          read_only: z.boolean(),
           deploy_hook_configured: z.boolean(),
+          deploy_hook_host: z.string().optional(),
           upload_roots_configured: z.boolean(),
           live_check_configured: z.boolean(),
         }),
@@ -236,123 +257,137 @@ export function createServer(publisher: GhostPublisher): McpServer {
     },
   );
 
-  server.registerTool(
-    'create_drafts',
-    {
-      title: 'Create Ghost drafts',
-      description: 'Create 1–10 posts as drafts from Markdown. This tool cannot publish. Ordered tags preserve the primary tag.',
-      inputSchema: z.object({ posts: z.array(draftSchema).min(1).max(10) }),
-      outputSchema: batchSchema,
-      annotations: write,
-    },
-    async ({ posts }) => {
-      try {
-        const data = await publisher.createDrafts(posts);
-        return success(data, `${data.succeeded.length} draft(s) created, ${data.failed.length} failed`);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  server.registerTool(
-    'update_draft',
-    {
-      title: 'Update a Ghost draft',
-      description: 'Patch one draft using its current updated_at value. Published and scheduled posts are refused.',
-      inputSchema: z.object({ id: targetSchema.shape.id, updated_at: z.string().min(1), patch: draftPatchSchema }),
-      outputSchema: z.object({ post: postRefSchema }),
-      annotations: write,
-    },
-    async ({ id, updated_at, patch }) => {
-      try {
-        const post = await publisher.updateDraft({ id, updated_at, ...patch });
-        return success({ post }, `Updated draft ${post.title}`);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  server.registerTool(
-    'update_published_post',
-    {
-      title: 'Update a published Ghost post',
-      description: 'Update approved metadata on one published post after explicit user approval for the exact post and patch. Uses updated_at collision protection, saves a Ghost revision, preserves published status, and never replaces the body.',
-      inputSchema: z.object({ id: targetSchema.shape.id, updated_at: z.string().min(1), patch: publishedPatchSchema }),
-      outputSchema: z.object({ post: postRefSchema }),
-      annotations: destructive,
-    },
-    async ({ id, updated_at, patch }) => {
-      try {
-        const post = await publisher.updatePublishedPost({ id, updated_at, ...patch });
-        return success({ post }, `Updated published post ${post.title}`);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  server.registerTool(
-    'upload_image',
-    {
-      title: 'Upload an image to Ghost',
-      description: 'Upload a local image inside GHOST_UPLOAD_ROOTS, including images generated by the AI client. Remote URLs, SVG, symlink escapes, and files over 20 MB are refused.',
-      inputSchema: z.object({ path: z.string().min(1) }),
-      outputSchema: z.object({ image: imageSchema }),
-      annotations: write,
-    },
-    async ({ path }) => {
-      try {
-        const image = await publisher.uploadImage(path);
-        return success({ image }, `Uploaded ${image.url}`);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  for (const [name, status, title] of [
-    ['publish_posts', 'published', 'Publish Ghost posts'],
-    ['unpublish_posts', 'draft', 'Unpublish Ghost posts'],
-  ] as const) {
+  if (!publisher.config.readOnly) {
     server.registerTool(
-      name,
+      'create_drafts',
       {
-        title,
-        description: `${title} as an exact, version-checked batch. A configured deploy hook runs only after complete success. Newsletter email is never sent.`,
-        inputSchema: z.object({ posts: z.array(targetSchema).min(1).max(25) }),
+        title: 'Create Ghost drafts',
+        description: 'Create 1–10 posts as drafts from Markdown. This tool cannot publish. Ordered tags preserve the primary tag.',
+        inputSchema: z.object({ posts: z.array(draftSchema).min(1).max(10) }),
         outputSchema: batchSchema,
-        annotations: destructive,
+        annotations: write,
       },
       async ({ posts }) => {
         try {
-          const data = await publisher.transitionPosts(posts, status);
-          return success(data, `${data.succeeded.length} changed, ${data.failed.length} failed`);
+          const data = await publisher.createDrafts(posts);
+          return success(data, `${data.succeeded.length} draft(s) created, ${data.failed.length} failed`);
+        } catch (error) {
+          return fail(error);
+        }
+      },
+    );
+
+    server.registerTool(
+      'update_draft',
+      {
+        title: 'Update a Ghost draft',
+        description: 'Patch one draft using its current updated_at value. Markdown replaces the complete body and requires body_replacement_confirmed=true because Ghost HTML-to-Lexical conversion can be lossy. Published and scheduled posts are refused.',
+        inputSchema: updateDraftSchema,
+        outputSchema: z.object({ post: postRefSchema }),
+        annotations: write,
+      },
+      async ({ id, updated_at, patch, body_replacement_confirmed }) => {
+        try {
+          const post = await publisher.updateDraft({ id, updated_at, ...patch, body_replacement_confirmed });
+          return success({ post }, `Updated draft ${post.title}`);
+        } catch (error) {
+          return fail(error);
+        }
+      },
+    );
+
+    server.registerTool(
+      'update_published_post',
+      {
+        title: 'Update a published Ghost post',
+        description: 'Update approved metadata on one published post. Requires user_confirmed=true for the exact post and patch, uses updated_at collision protection, saves a Ghost revision, preserves published status, and never replaces the body.',
+        inputSchema: z.object({
+          id: targetSchema.shape.id,
+          updated_at: z.string().min(1),
+          patch: publishedPatchSchema,
+          user_confirmed: z.literal(true),
+        }),
+        outputSchema: z.object({ post: postRefSchema }),
+        annotations: destructive,
+      },
+      async ({ id, updated_at, patch }) => {
+        try {
+          const post = await publisher.updatePublishedPost({ id, updated_at, ...patch });
+          return success({ post }, `Updated published post ${post.title}`);
+        } catch (error) {
+          return fail(error);
+        }
+      },
+    );
+
+    server.registerTool(
+      'upload_image',
+      {
+        title: 'Upload an image to Ghost',
+        description: 'Upload a local image inside GHOST_UPLOAD_ROOTS, including images generated by the AI client. Remote URLs, SVG, symlink escapes, and files over 20 MB are refused.',
+        inputSchema: z.object({ path: z.string().min(1) }),
+        outputSchema: z.object({ image: imageSchema }),
+        annotations: write,
+      },
+      async ({ path }) => {
+        try {
+          const image = await publisher.uploadImage(path);
+          return success({ image }, `Uploaded ${image.url}`);
+        } catch (error) {
+          return fail(error);
+        }
+      },
+    );
+
+    for (const [name, status, title] of [
+      ['publish_posts', 'published', 'Publish Ghost posts'],
+      ['unpublish_posts', 'draft', 'Unpublish Ghost posts'],
+    ] as const) {
+      server.registerTool(
+        name,
+        {
+          title,
+          description: `${title} as an exact, version-checked batch after user_confirmed=true. A configured deploy hook runs exactly once after complete success. Newsletter email is never sent.`,
+          inputSchema: z.object({ posts: z.array(targetSchema).min(1).max(25), user_confirmed: z.literal(true) }),
+          outputSchema: batchSchema,
+          annotations: destructive,
+        },
+        async ({ posts }) => {
+          try {
+            const data = await publisher.transitionPosts(posts, status);
+            const deployFailed = data.deploy?.accepted === false;
+            const text = `${data.succeeded.length} changed, ${data.failed.length} failed${deployFailed ? '; deployment failed' : ''}`;
+            return success(data, text, deployFailed);
+          } catch (error) {
+            return fail(error);
+          }
+        },
+      );
+    }
+
+    server.registerTool(
+      'trigger_deploy',
+      {
+        title: 'Trigger site deployment',
+        description: 'POST exactly once to the configured deployment hook after user_confirmed=true. The hook URL cannot be supplied by the caller and failures are never retried automatically.',
+        inputSchema: z.object({ user_confirmed: z.literal(true) }),
+        outputSchema: z.object({ deploy: deploySchema }),
+        annotations: destructive,
+      },
+      async () => {
+        try {
+          const deploy = await publisher.triggerDeploy();
+          return success(
+            { deploy },
+            deploy.accepted ? `Deploy hook returned HTTP ${deploy.status}` : deploy.error ?? 'Deployment failed',
+            !deploy.accepted,
+          );
         } catch (error) {
           return fail(error);
         }
       },
     );
   }
-
-  server.registerTool(
-    'trigger_deploy',
-    {
-      title: 'Trigger site deployment',
-      description: 'POST once to the configured deployment hook. The hook URL cannot be supplied by the caller.',
-      outputSchema: z.object({ deploy: deploySchema }),
-      annotations: destructive,
-    },
-    async () => {
-      try {
-        const deploy = await publisher.triggerDeploy();
-        return success({ deploy }, `Deploy hook returned HTTP ${deploy.status}`);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
 
   server.registerTool(
     'check_live_posts',

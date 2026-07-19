@@ -4,6 +4,7 @@ export type Config = {
   ghostUrl: string;
   ghostAdminApiKey: string;
   ghostApiVersion: string;
+  readOnly: boolean;
   uploadRoots: string[];
   deployHookUrl?: string;
   publicPostUrlTemplate?: string;
@@ -25,6 +26,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!env.GHOST_ADMIN_API_KEY) throw new Error('GHOST_ADMIN_API_KEY is required');
   if (!ADMIN_KEY.test(env.GHOST_ADMIN_API_KEY)) {
     throw new Error('GHOST_ADMIN_API_KEY must use the id:secret format from a Ghost custom integration');
+  }
+  if (env.GHOST_READ_ONLY && !['true', 'false'].includes(env.GHOST_READ_ONLY)) {
+    throw new Error('GHOST_READ_ONLY must be true or false');
   }
 
   const uploadRoots = (env.GHOST_UPLOAD_ROOTS ?? '')
@@ -51,6 +55,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ghostUrl: safeUrl(env.GHOST_URL, 'GHOST_URL'),
     ghostAdminApiKey: env.GHOST_ADMIN_API_KEY,
     ghostApiVersion: env.GHOST_API_VERSION ?? 'v5.0',
+    readOnly: env.GHOST_READ_ONLY === 'true',
     uploadRoots,
     deployHookUrl,
     publicPostUrlTemplate,
@@ -61,7 +66,9 @@ export function publicConfig(config: Config) {
   return {
     ghost_url: config.ghostUrl,
     ghost_api_version: config.ghostApiVersion,
+    read_only: config.readOnly,
     deploy_hook_configured: Boolean(config.deployHookUrl),
+    ...(config.deployHookUrl ? { deploy_hook_host: new URL(config.deployHookUrl).host } : {}),
     upload_roots_configured: config.uploadRoots.length > 0,
     live_check_configured: Boolean(config.publicPostUrlTemplate),
   };
