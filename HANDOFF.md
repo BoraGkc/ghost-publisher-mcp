@@ -33,6 +33,7 @@ An MCP subprocess cannot directly invoke a separate tool owned by its host, so t
 - `npm run check` passes: typecheck, lint, 9 unit tests, and build.
 - `npm audit --audit-level=high` reports zero vulnerabilities.
 - `npm pack --dry-run` succeeds.
+- Node.js 22/24 CI and the disposable Ghost 5/6 release gate pass, including real image upload and the full create/update/publish/unpublish lifecycle.
 - Official MCP Registry metadata is prepared as `server.json` with package verification via `mcpName`.
 - A read-only smoke test authenticated against the existing Ghost site and confirmed 11 tools with no `generate_image` tool.
 
@@ -63,11 +64,10 @@ Never commit credentials. The Ghost Admin key previously shared in chat should b
 
 ## Next work
 
-1. Run the release-gate integration workflow against current Ghost 5 and Ghost 6 containers.
-2. Recheck the npm package name, reserve it, and publish `0.1.0` with npm provenance.
-3. Replace the bootstrap npm token with trusted publishing and revoke the token.
-4. Publish `server.json` to the official MCP Registry and submit the repository to MCP Market's free queue.
-5. Configure the published package in Codex and run the acceptance flow: upload images, create three drafts, approve, publish, deploy, and verify live URLs.
+1. Recheck the npm package name, reserve it, and publish `0.1.0` with npm provenance.
+2. Replace the bootstrap npm token with trusted publishing and revoke the token.
+3. Publish `server.json` to the official MCP Registry and submit the repository to MCP Market's free queue.
+4. Configure the published package in Codex and run the acceptance flow: upload images, create three drafts, approve, publish, deploy, and verify live URLs.
 
 Do not add pages, newsletters, members, themes, arbitrary API execution, remote image URLs, OAuth, remote HTTP transport, or Docker runtime support unless real demand justifies the added security surface.
 
