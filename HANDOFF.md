@@ -34,7 +34,8 @@ An MCP subprocess cannot directly invoke a separate tool owned by its host, so t
 - `npm audit --audit-level=high` reports zero vulnerabilities.
 - `npm pack --dry-run` succeeds.
 - Node.js 22/24 CI and disposable Ghost 5/6 release-gate workflows are configured. The integration flow includes a published-post metadata update; run it before any live-site acceptance because Docker is unavailable in the current local environment.
-- Official MCP Registry metadata is prepared as `server.json` with package verification via `mcpName`.
+- `ghost-publisher-mcp@0.1.1` is published on npm with provenance; npm trusted publishing is configured for `release.yml`, and the bootstrap GitHub secret is deleted.
+- `io.github.BoraGkc/ghost-publisher@0.1.1` is published in the official MCP Registry.
 - The Ghost + hosted OpenSEO hybrid workflow and versioned optimizer skill are prepared for Ortak Alan acceptance testing.
 
 Recent commits:
@@ -68,9 +69,8 @@ Never commit credentials. The Ghost Admin key previously shared in chat should b
 2. Run the Ortak Alan workflow in proposal-only mode, using free/cached evidence before any approved paid OpenSEO calls.
 3. Approve one low-risk metadata-only patch, confirm its Ghost revision exists, deploy once, and verify rendered metadata on the public URL.
 4. Commit, push, tag, and publish `0.2.0` with npm provenance only after those gates pass.
-5. Replace the bootstrap npm token with trusted publishing and revoke the token.
-6. Publish `server.json` to the official MCP Registry and submit the repository to MCP Market's free queue.
-7. Configure the published package in Codex and run the draft acceptance flow: upload images, create three drafts, approve, publish, deploy, and verify live URLs.
+5. Revoke the two short-lived bootstrap npm tokens and submit the repository to MCP Market's free queue.
+6. Configure the published package in Codex and run the draft acceptance flow: upload images, create three drafts, approve, publish, deploy, and verify live URLs.
 
 Do not add pages, newsletters, members, themes, arbitrary API execution, remote image URLs, OAuth, remote HTTP transport, or Docker runtime support unless real demand justifies the added security surface.
 
