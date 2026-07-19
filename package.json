@@ -1,0 +1,59 @@
+{
+  "name": "ghost-publisher-mcp",
+  "version": "0.1.0",
+  "description": "Write with your AI. Publish safely to Ghost.",
+  "type": "module",
+  "bin": {
+    "ghost-publisher-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:integration": "node test/ghost-integration.mjs",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "prepublishOnly": "npm run check"
+  },
+  "keywords": [
+    "ghost",
+    "mcp",
+    "cms",
+    "publishing",
+    "ai"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BoraGkc/ghost-publisher-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BoraGkc/ghost-publisher-mcp/issues"
+  },
+  "homepage": "https://github.com/BoraGkc/ghost-publisher-mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@tryghost/admin-api": "^1.14.11",
+    "file-type": "^22.0.1",
+    "form-data": "^4.0.6",
+    "markdown-it": "^14.1.0",
+    "openai": "^6.48.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.20.1",
+    "eslint": "^9.39.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.64.0",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,34 @@
+name: Ghost integration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ghost:
+    strategy:
+      matrix:
+        image: ['ghost:5-alpine', 'ghost:6-alpine']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Start Ghost
+        env:
+          GHOST_IMAGE: ${{ matrix.image }}
+        run: docker compose -f test/docker-compose.yml up -d
+      - name: Run publishing workflow
+        env:
+          GHOST_IMAGE: ${{ matrix.image }}
+        run: npm run test:integration
+      - if: always()
+        env:
+          GHOST_IMAGE: ${{ matrix.image }}
+        run: docker compose -f test/docker-compose.yml logs ghost && docker compose -f test/docker-compose.yml down -v
