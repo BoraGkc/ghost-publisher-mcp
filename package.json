@@ -1,6 +1,6 @@
 {
   "name": "ghost-publisher-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "mcpName": "io.github.boragokce/ghost-publisher",
   "description": "Write with your AI. Publish safely to Ghost.",
   "type": "module",
@@ -9,6 +9,7 @@
   },
   "files": [
     "dist",
+    ".agents/skills/ghost-seo-optimizer",
     "README.md",
     "LICENSE"
   ],

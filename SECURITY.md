@@ -12,4 +12,4 @@ Rotate any credential that may have appeared in a log, screenshot, issue, or cha
 
 ## Deployment boundary
 
-Version 0.1 is a local stdio server. Do not expose it as a network service. A remote transport requires a separate authentication and threat-model review.
+Version 0.2 is a local stdio server. Do not expose it as a network service. A remote transport requires a separate authentication and threat-model review.
