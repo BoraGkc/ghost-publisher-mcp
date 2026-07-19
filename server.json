@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.boragokce/ghost-publisher",
+  "name": "io.github.BoraGkc/ghost-publisher",
   "description": "Write with your AI and publish safely to Ghost.",
   "repository": {
     "url": "https://github.com/BoraGkc/ghost-publisher-mcp",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "ghost-publisher-mcp",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "transport": {
         "type": "stdio"
       },

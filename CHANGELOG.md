@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Match the MCP Registry namespace to the canonical GitHub username casing.
+
 ## 0.1.0
 
 - Initial local stdio MCP server with 11 publishing tools.
