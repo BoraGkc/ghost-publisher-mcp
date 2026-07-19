@@ -247,8 +247,15 @@ export class GhostPublisher {
   }
 
   async updateDraft(
-    input: Partial<DraftInput> & { id: string; updated_at: string },
+    input: Partial<DraftInput> & {
+      id: string;
+      updated_at: string;
+      body_replacement_confirmed?: true;
+    },
   ): Promise<PostRef> {
+    if (input.markdown !== undefined && input.body_replacement_confirmed !== true) {
+      throw new Error('Replacing a draft body requires body_replacement_confirmed=true');
+    }
     const current = await this.ghost.posts.read({ id: input.id }, { formats: 'html', include: 'tags' });
     if (current.status !== 'draft') throw new Error('update_draft only accepts draft posts');
     if (String(current.updated_at) !== input.updated_at) {
@@ -390,11 +397,20 @@ export class GhostPublisher {
   async triggerDeploy(): Promise<DeployResult> {
     if (!this.config.deployHookUrl) throw new Error('GHOST_DEPLOY_HOOK_URL is not configured');
     const url = new URL(this.config.deployHookUrl);
-    const response = await this.request(url, {
-      method: 'POST',
-      signal: AbortSignal.timeout(30_000),
-    });
-    return { accepted: response.ok, host: url.host, status: response.status };
+    try {
+      const response = await this.request(url, {
+        method: 'POST',
+        signal: AbortSignal.timeout(30_000),
+      });
+      return {
+        accepted: response.ok,
+        host: url.host,
+        status: response.status,
+        ...(!response.ok ? { error: `Deploy hook returned HTTP ${response.status}` } : {}),
+      };
+    } catch (error) {
+      return { accepted: false, host: url.host, status: 0, error: errorMessage(error, this.config) };
+    }
   }
 
   async checkLivePosts(

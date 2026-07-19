@@ -67,6 +67,7 @@ const config = {
   ghostUrl,
   ghostAdminApiKey: adminKey,
   ghostApiVersion: 'v5.0',
+  readOnly: false,
   uploadRoots: [uploadRoot],
 };
 const publisher = new GhostPublisher(config);

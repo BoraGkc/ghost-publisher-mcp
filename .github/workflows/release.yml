@@ -54,4 +54,42 @@ jobs:
         run: |
           node -e "const p=require('./package.json'),s=require('./server.json'); if(p.mcpName!==s.name||p.version!==s.version||p.name!==s.packages[0].identifier||p.version!==s.packages[0].version) throw new Error('package.json and server.json must match')"
           test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
-      - run: npm publish --provenance --access public
+      - name: Publish npm package with provenance
+        run: npm publish --provenance --access public
+      - name: Wait for npm availability
+        run: |
+          release_version="$(node -p "require('./package.json').version")"
+          for attempt in $(seq 1 30); do
+            if published_version="$(npm view "ghost-publisher-mcp@${release_version}" version 2>/dev/null)" && test "$published_version" = "$release_version"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "npm did not expose ghost-publisher-mcp@${release_version} within five minutes" >&2
+          exit 1
+      - name: Install pinned MCP publisher
+        run: |
+          curl --fail --location --silent --show-error \
+            --output mcp-publisher_linux_amd64.tar.gz \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.7.9/mcp-publisher_linux_amd64.tar.gz
+          echo "ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac  mcp-publisher_linux_amd64.tar.gz" | sha256sum --check
+          tar --extract --gzip --file mcp-publisher_linux_amd64.tar.gz mcp-publisher
+          ./mcp-publisher --version 2>&1 | grep --extended-regexp --quiet '(^|[^0-9])v?1\.7\.9([^0-9]|$)'
+      - name: Authenticate to official MCP Registry
+        run: ./mcp-publisher login github-oidc
+      - name: Publish official MCP Registry metadata
+        run: ./mcp-publisher publish
+      - name: Verify npm and official MCP Registry versions
+        run: |
+          release_version="$(node -p "require('./package.json').version")"
+          test "$(npm view "ghost-publisher-mcp@${release_version}" version)" = "$release_version"
+          registry_url="https://registry.modelcontextprotocol.io/v0.1/servers/io.github.BoraGkc%2Fghost-publisher/versions/${release_version}"
+          for attempt in $(seq 1 30); do
+            if registry_json="$(curl --fail --silent --show-error "$registry_url" 2>/dev/null)" && \
+              printf '%s' "$registry_json" | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8'));if(d.server?.version!==process.argv[1])process.exit(1)" "$release_version"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Official MCP Registry did not expose ${release_version} within five minutes" >&2
+          exit 1

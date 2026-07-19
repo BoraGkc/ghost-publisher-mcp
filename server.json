@@ -38,6 +38,13 @@
           "format": "string"
         },
         {
+          "name": "GHOST_READ_ONLY",
+          "description": "Set to true to expose only read-only tools; defaults to false.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
           "name": "GHOST_UPLOAD_ROOTS",
           "description": "Allowed absolute directories for local image uploads.",
           "isRequired": false,
@@ -46,7 +53,7 @@
         },
         {
           "name": "GHOST_DEPLOY_HOOK_URL",
-          "description": "Optional deployment hook called after a successful publish batch.",
+          "description": "Optional deployment hook called once after a completely successful publish or unpublish batch.",
           "isRequired": false,
           "isSecret": true,
           "format": "string"

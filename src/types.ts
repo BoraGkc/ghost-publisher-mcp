@@ -20,6 +20,7 @@ export type DeployResult = {
   accepted: boolean;
   host: string;
   status: number;
+  error?: string;
 };
 
 export type BatchResult = {

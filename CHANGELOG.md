@@ -1,12 +1,17 @@
 # Changelog
 
-## 0.2.0
+## 0.2.0 (unreleased)
 
 - Add approval-gated, revision-saving updates for published posts with optimistic locking.
 - Return complete SEO and social metadata from `get_post`.
 - Keep published article bodies read-only; live optimization patches are metadata-only.
 - Verify optional rendered meta title, description, and canonical URL in public checks.
 - Add the versioned Ghost + OpenSEO optimizer agent skill and hybrid implementation plan.
+- Require caller-attested literal `user_confirmed: true` for published updates, publish/unpublish batches, and manual deployment.
+- Add strict `GHOST_READ_ONLY` mode, exposing only five read tools.
+- Require `body_replacement_confirmed: true` for complete Markdown draft-body replacement.
+- Make deployment single-attempt, preserve completed post transitions on hook failure, and return structured errors without hook paths or query strings.
+- Publish npm and official MCP Registry metadata from one tag-triggered OIDC workflow after Ghost 5/6 validation.
 
 ## 0.1.1
 
