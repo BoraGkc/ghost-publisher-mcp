@@ -9,6 +9,7 @@ permissions:
 jobs:
   ghost:
     strategy:
+      fail-fast: false
       matrix:
         image: ['ghost:5-alpine', 'ghost:6-alpine']
     runs-on: ubuntu-latest
