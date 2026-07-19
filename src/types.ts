@@ -33,9 +33,7 @@ export type ImageAsset = {
   url: string;
   mime_type: string;
   bytes: number;
-  source: 'upload' | 'openai';
-  model?: string;
-  request_id?: string;
+  source: 'upload';
 };
 
 export type DraftInput = {

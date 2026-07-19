@@ -8,15 +8,14 @@ describe('configuration boundary', () => {
     const config = loadConfig({
       GHOST_URL: 'https://example.com/',
       GHOST_ADMIN_API_KEY: key,
-      OPENAI_API_KEY: 'openai-secret',
       GHOST_DEPLOY_HOOK_URL: 'https://deploy.example.com/hook?secret=yes',
       GHOST_PUBLIC_POST_URL_TEMPLATE: 'https://example.com/posts/{slug}',
     });
 
     expect(config.ghostUrl).toBe('https://example.com');
     expect(publicConfig(config)).not.toHaveProperty('ghostAdminApiKey');
-    expect(redactSecrets(`bad ${key} openai-secret ${config.deployHookUrl}`, config)).toBe(
-      'bad [REDACTED] [REDACTED] [REDACTED]',
+    expect(redactSecrets(`bad ${key} ${config.deployHookUrl}`, config)).toBe(
+      'bad [REDACTED] [REDACTED]',
     );
   });
 

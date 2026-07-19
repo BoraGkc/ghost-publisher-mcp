@@ -5,8 +5,6 @@ export type Config = {
   ghostAdminApiKey: string;
   ghostApiVersion: string;
   uploadRoots: string[];
-  openAiApiKey?: string;
-  openAiImageModel: string;
   deployHookUrl?: string;
   publicPostUrlTemplate?: string;
 };
@@ -54,8 +52,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ghostAdminApiKey: env.GHOST_ADMIN_API_KEY,
     ghostApiVersion: env.GHOST_API_VERSION ?? 'v5.0',
     uploadRoots,
-    openAiApiKey: env.OPENAI_API_KEY,
-    openAiImageModel: env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2',
     deployHookUrl,
     publicPostUrlTemplate,
   };
@@ -65,7 +61,6 @@ export function publicConfig(config: Config) {
   return {
     ghost_url: config.ghostUrl,
     ghost_api_version: config.ghostApiVersion,
-    openai_configured: Boolean(config.openAiApiKey),
     deploy_hook_configured: Boolean(config.deployHookUrl),
     upload_roots_configured: config.uploadRoots.length > 0,
     live_check_configured: Boolean(config.publicPostUrlTemplate),
@@ -73,7 +68,7 @@ export function publicConfig(config: Config) {
 }
 
 export function redactSecrets(message: string, config: Config): string {
-  return [config.ghostAdminApiKey, config.openAiApiKey, config.deployHookUrl]
+  return [config.ghostAdminApiKey, config.deployHookUrl]
     .filter((secret): secret is string => Boolean(secret))
     .reduce((safe, secret) => safe.replaceAll(secret, '[REDACTED]'), message);
 }

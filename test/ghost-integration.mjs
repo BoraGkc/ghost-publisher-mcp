@@ -55,7 +55,6 @@ const config = {
   ghostAdminApiKey: adminKey,
   ghostApiVersion: 'v5.0',
   uploadRoots: [],
-  openAiImageModel: 'gpt-image-2',
 };
 const publisher = new GhostPublisher(config);
 const api = new GhostAdminAPI({ url: ghostUrl, key: adminKey, version: 'v5.0' });

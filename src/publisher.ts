@@ -4,7 +4,6 @@ import GhostAdminAPI from '@tryghost/admin-api';
 import { fileTypeFromBuffer } from 'file-type';
 import FormData from 'form-data';
 import MarkdownIt from 'markdown-it';
-import OpenAI from 'openai';
 import { redactSecrets, type Config } from './config.js';
 import type { BatchResult, DeployResult, DraftInput, ImageAsset, PostRef } from './types.js';
 
@@ -14,7 +13,6 @@ const markdown = new MarkdownIt({ html: false, linkify: true, typographer: false
 
 type Dependencies = {
   ghost?: any;
-  openai?: OpenAI;
   fetch?: typeof fetch;
 };
 
@@ -100,7 +98,6 @@ function ghostDraft(input: DraftInput & { slug: string }): Record<string, unknow
 
 export class GhostPublisher {
   private readonly ghost: any;
-  private readonly openai?: OpenAI;
   private readonly request: typeof fetch;
 
   constructor(
@@ -114,11 +111,6 @@ export class GhostPublisher {
         key: config.ghostAdminApiKey,
         version: config.ghostApiVersion,
       });
-    this.openai =
-      dependencies.openai ??
-      (config.openAiApiKey
-        ? new OpenAI({ apiKey: config.openAiApiKey, maxRetries: 2 })
-        : undefined);
     this.request = dependencies.fetch ?? fetch;
   }
 
@@ -317,47 +309,13 @@ export class GhostPublisher {
       const stats = await handle.stat();
       if (!stats.isFile()) throw new Error('Image path must be a regular file');
       if (stats.size > MAX_IMAGE_BYTES) throw new Error('Image exceeds the 20 MB limit');
-      return this.uploadBuffer(await handle.readFile(), path.basename(resolved), 'upload');
+      return this.uploadBuffer(await handle.readFile(), path.basename(resolved));
     } finally {
       await handle.close();
     }
   }
 
-  async generateImage(input: {
-    prompt: string;
-    quality: 'low' | 'medium' | 'high' | 'auto';
-    size: '1024x1024' | '1536x1024' | '1024x1536' | '2048x1152' | 'auto';
-    format: 'png' | 'jpeg' | 'webp';
-    filename?: string;
-  }): Promise<ImageAsset> {
-    if (!this.openai) throw new Error('OPENAI_API_KEY is required for generate_image');
-    const response = await this.openai.images.generate({
-      model: this.config.openAiImageModel,
-      prompt: input.prompt,
-      n: 1,
-      quality: input.quality,
-      size: input.size,
-      output_format: input.format,
-    });
-    const encoded = response.data?.[0]?.b64_json;
-    if (!encoded) throw new Error('OpenAI returned no image data');
-    const base = path.parse(path.basename(input.filename ?? 'generated')).name.replace(/[^a-zA-Z0-9._-]/g, '-');
-    return this.uploadBuffer(
-      Buffer.from(encoded, 'base64'),
-      `${base || 'generated'}.${input.format === 'jpeg' ? 'jpg' : input.format}`,
-      'openai',
-      this.config.openAiImageModel,
-      (response as { _request_id?: string })._request_id,
-    );
-  }
-
-  private async uploadBuffer(
-    buffer: Buffer,
-    filename: string,
-    source: 'upload' | 'openai',
-    model?: string,
-    requestId?: string,
-  ): Promise<ImageAsset> {
+  private async uploadBuffer(buffer: Buffer, filename: string): Promise<ImageAsset> {
     if (buffer.byteLength > MAX_IMAGE_BYTES) throw new Error('Image exceeds the 20 MB limit');
     const type = await fileTypeFromBuffer(buffer);
     if (!type || !IMAGE_TYPES.has(type.mime)) throw new Error('Unsupported image type');
@@ -369,9 +327,7 @@ export class GhostPublisher {
       url: String(uploaded.url),
       mime_type: type.mime,
       bytes: buffer.byteLength,
-      source,
-      ...(model ? { model } : {}),
-      ...(requestId ? { request_id: requestId } : {}),
+      source: 'upload',
     };
   }
 

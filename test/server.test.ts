@@ -10,11 +10,10 @@ const config: Config = {
   ghostAdminApiKey: `${'a'.repeat(24)}:${'b'.repeat(64)}`,
   ghostApiVersion: 'v5.0',
   uploadRoots: [],
-  openAiImageModel: 'gpt-image-2',
 };
 
 describe('MCP contract', () => {
-  it('advertises exactly twelve tools and returns structured content', async () => {
+  it('advertises exactly eleven tools and returns structured content', async () => {
     const publisher = new GhostPublisher(config, {
       ghost: { site: { read: async () => ({ title: 'Test Ghost', url: 'https://ghost.example.com' }) } },
     });
@@ -24,13 +23,14 @@ describe('MCP contract', () => {
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
 
     const tools = await client.listTools();
-    expect(tools.tools.map((tool) => tool.name)).toHaveLength(12);
+    expect(tools.tools.map((tool) => tool.name)).toHaveLength(11);
+    expect(tools.tools.map((tool) => tool.name)).not.toContain('generate_image');
     expect(tools.tools.map((tool) => tool.name)).toContain('publish_posts');
 
     const result = await client.callTool({ name: 'check_connection', arguments: {} });
     expect(result.structuredContent).toMatchObject({
       site: { title: 'Test Ghost' },
-      configuration: { openai_configured: false, deploy_hook_configured: false },
+      configuration: { deploy_hook_configured: false },
     });
 
     await client.close();

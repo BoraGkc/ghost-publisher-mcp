@@ -12,7 +12,6 @@ const baseConfig: Config = {
   ghostAdminApiKey: key,
   ghostApiVersion: 'v5.0',
   uploadRoots: [],
-  openAiImageModel: 'gpt-image-2',
 };
 
 afterEach(async () => {
@@ -124,37 +123,4 @@ describe('publishing service', () => {
     await expect(publisher.uploadImage(escaped)).rejects.toThrow('outside GHOST_UPLOAD_ROOTS');
   });
 
-  it('keeps OpenAI optional', async () => {
-    const publisher = new GhostPublisher(baseConfig, { ghost: {} });
-    await expect(
-      publisher.generateImage({
-        prompt: 'A blue circle',
-        quality: 'low',
-        size: '1024x1024',
-        format: 'png',
-      }),
-    ).rejects.toThrow('OPENAI_API_KEY is required');
-  });
-
-  it('uploads generated OpenAI image bytes without writing a temporary file', async () => {
-    const png =
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZJ3gAAAAASUVORK5CYII=';
-    const generate = vi.fn(async () => ({ data: [{ b64_json: png }], _request_id: 'req_test' }));
-    const upload = vi.fn(async () => ({ url: 'https://ghost.example.com/generated.png' }));
-    const publisher = new GhostPublisher(baseConfig, {
-      ghost: { images: { upload } },
-      openai: { images: { generate } } as never,
-    });
-
-    const image = await publisher.generateImage({
-      prompt: 'A blue circle',
-      quality: 'low',
-      size: '1024x1024',
-      format: 'png',
-    });
-
-    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-image-2', output_format: 'png' }));
-    expect(upload).toHaveBeenCalledOnce();
-    expect(image).toMatchObject({ source: 'openai', request_id: 'req_test' });
-  });
 });
