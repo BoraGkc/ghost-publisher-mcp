@@ -15,7 +15,7 @@ const imagePath = path.join(uploadRoot, 'pixel.png');
 await writeFile(
   imagePath,
   Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZJ3gAAAAASUVORK5CYII=',
+    'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAL0lEQVR4nO3OIQEAAAgDMLoQjfiEgBg3E/Ornr2kEhAQEBAQEBAQEBAQEBAQSAcecybAiG90aXEAAAAASUVORK5CYII=',
     'base64',
   ),
 );
