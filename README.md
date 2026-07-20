@@ -8,7 +8,7 @@ Ghost Publisher deliberately exposes 23 bounded editorial tools instead of mirro
 
 > This project is not affiliated with or endorsed by the Ghost Foundation.
 
-> Release status: npm and the official MCP Registry currently serve `0.1.1`. This repository is prepared as the unreleased `0.4.0` release candidate. The one-command installer and the complete tool list below require `0.4.0`; use the pinned current-release or source instructions until publication is verified.
+> Current release: `0.4.0`, published to npm and the official MCP Registry and verified against Ghost 5 and Ghost 6.
 
 ## Requirements
 
@@ -18,9 +18,9 @@ Ghost Publisher deliberately exposes 23 bounded editorial tools instead of mirro
 
 Create a custom integration in **Ghost Admin → Settings → Integrations**, then copy its Admin API key.
 
-## One-command setup (`0.4.0`)
+## One-command setup
 
-After npm reports `0.4.0`, run this in a private terminal:
+Run this in a private terminal:
 
 ```bash
 npx -y ghost-publisher-mcp@latest setup --url https://your-ghost.example.com
@@ -41,22 +41,9 @@ unset GHOST_SETUP_KEY
 
 Use `--read-only` for a nine-tool read-only installation. Use `--dry-run` to preview a fully redacted plan. Existing entries are preserved unless `--replace` is supplied. The Admin key is stored in each selected client's local user configuration; setup refuses symlinked configurations.
 
-## Use the published `0.1.1` release now
-
-Until `0.4.0` is published, add this pinned entry directly to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.ghost-publisher]
-command = "npx"
-args = ["-y", "ghost-publisher-mcp@0.1.1"]
-env = { GHOST_URL = "https://your-ghost.example.com", GHOST_ADMIN_API_KEY = "your_id:your_secret" }
-```
-
-Save the file, restart Codex, and ask: `Check my Ghost connection. Do not change anything.` The Codex app, CLI, and IDE extension share this user-level MCP configuration. Version `0.1.1` has the original post workflow; Pages, scheduling, and setup arrive with `0.4.0`.
-
 Ghost Publisher runs locally so the Ghost Admin key is not entrusted to another hosted service. An OpenSEO-style hosted connection would require a separately threat-modeled credential service and remains on the [future roadmap](docs/plans/future-interoperability.md).
 
-For optional deployment, upload, live-check, and read-only settings in `0.4.0`, the equivalent full Codex configuration is:
+For optional deployment, upload, live-check, and read-only settings, the equivalent full Codex configuration is:
 
 ```toml
 [mcp_servers.ghost-publisher]
@@ -150,7 +137,7 @@ Ghost Publisher can be used beside [OpenSEO](https://github.com/every-app/open-s
 
 For the first Ortak Alan workflow, configure [hosted OpenSEO MCP](https://openseo.so/docs/mcp) separately and connect Google Search Console when available. Search Console is recommended, not required; OpenSEO owns any DataForSEO usage and charges. Confirm that the OpenSEO project uses the public Ortak Alan domain with market `2792/tr`. Site audits use OpenSEO plan capacity rather than DataForSEO credits; keyword metrics and live SERPs consume credits and require separate approval in the optimizer workflow.
 
-The `0.4.0` release candidate includes the optimizer skill at `.agents/skills/ghost-seo-optimizer`. Published installation instructions will be added only after the tag and package verification succeed.
+The npm package includes the optimizer skill at `.agents/skills/ghost-seo-optimizer`.
 
 ```text
 Audit my published Ghost posts using OpenSEO. Prioritize query/page opportunities with

@@ -6,47 +6,40 @@ This file is the authoritative Now/Next/Later index. Detailed milestone plans ow
 
 | Horizon | Milestone | Status | Plan |
 | --- | --- | --- | --- |
-| Now | v0.2.0 release hardening and SEO workflow | Automated gates complete; live acceptance and release pending | [0.2 release](docs/plans/0.2-release.md), [SEO workflow](docs/plans/0.2-seo-workflow.md) |
-| Next | v0.2.1 cross-client onboarding | Implemented and CI-verified; publication follows v0.2.0 | [0.2.1 onboarding](docs/plans/0.2.1-onboarding.md) |
-| Planned | v0.3.0 editorial core | Implemented and Ghost 5/6 verified; publication follows onboarding acceptance | [0.3 editorial](docs/plans/0.3-editorial.md) |
-| Later | v0.4.0 safe Pages vertical | Implemented and Ghost 5/6 verified; usage review and publication pending | [0.4 Pages](docs/plans/0.4-pages.md) |
+| Shipped | v0.2.0 release hardening and SEO workflow | Included in the consolidated v0.4.0 release | [0.2 release](docs/plans/0.2-release.md), [SEO workflow](docs/plans/0.2-seo-workflow.md) |
+| Shipped | v0.2.1 cross-client onboarding | Included in the consolidated v0.4.0 release | [0.2.1 onboarding](docs/plans/0.2.1-onboarding.md) |
+| Shipped | v0.3.0 editorial core | Included in the consolidated v0.4.0 release | [0.3 editorial](docs/plans/0.3-editorial.md) |
+| Current | v0.4.0 safe Pages vertical | Published and verified on 2026-07-21 | [0.4 Pages](docs/plans/0.4-pages.md) |
 | Demand-gated | Portable prompts and broader interoperability | No committed release | [Future interoperability](docs/plans/future-interoperability.md) |
 
-The npm package and official MCP Registry currently remain on `0.1.1`. A user running `npx ghost-publisher-mcp@latest` therefore receives `0.1.1`, not onboarding, scheduling, or Pages. The milestone implementations through `0.4.0` are source-complete on an unmerged branch, but none is user-available until its tag-triggered release and clean-install smoke test pass.
+The npm package and official MCP Registry serve `0.4.0`. The tag workflow passed Ghost 5/6 integration, package checks, audit, npm provenance publication, Registry publication, and public version verification. A clean installation of the published package also passed the redacted setup dry run.
 
 ## Gap register
 
 | Priority | Gap | Closure | Status |
 | --- | --- | --- | --- |
-| P0 | `0.2.0` is unreleased | Run Ghost 5/6 and local gates, tag once, publish npm with provenance, publish Registry metadata, then verify both | Open |
+| P0 | `0.2.0` was not published separately | Ship the completed milestone contracts together in the next immutable release | Closed in v0.4.0 |
 | P0 | Ortak Alan live acceptance cannot run in this task | Connect Ghost Publisher and OpenSEO, prepare one proposal, then obtain exact approval for one patch and one deployment | Blocked on external connections and approval; no live action taken |
-| P0 | Roadmap contracts are not merged | Review and merge documentation-only PR [#8](https://github.com/BoraGkc/ghost-publisher-mcp/pull/8) | In review |
-| P0 | Full implementation branch is not release-lined | Use draft PR [#7](https://github.com/BoraGkc/ghost-publisher-mcp/pull/7) for review only; cut corrected milestone release commits instead of merging it wholesale | Open after v0.2.0 |
-| P0 | Deployment behavior contradicts documentation | Publish/unpublish deploy once after complete success; published metadata updates deploy only through a separate approved call; never retry writes | Implemented locally; release pending |
-| P1 | Approval is instructions-only | Require caller-attested literal `user_confirmed: true` for four destructive tools | Implemented locally; release pending |
-| P1 | No read-only mode | Validate `GHOST_READ_ONLY`; hide all write tools when enabled | Implemented locally; release pending |
-| P1 | No scheduling or author assignment | Add bounded author and scheduling tools after v0.2 | Implemented and integration-verified; release pending |
-| P1 | Setup is client-specific and manual | Add one interactive local installer for Codex, Cursor, and Claude Desktop | Implemented and cross-platform CI-verified; release pending |
-| P1 | Historical v0.2.1 and v0.3 milestone commits predate compatibility fixes | Cut release commits that include the Windows path/transaction fixes for v0.2.1 and legacy Ghost 5 author IDs for v0.3 before tagging | Open; do not tag `a86e82e` or `9c650cd` directly |
-| P1 | Current client releases have not been manually smoke-tested | Run the packed installer in current Codex, Cursor, and Claude Desktop before the v0.2.1 tag | Open |
-| P1 | Draft body updates can lose Ghost structure | Require literal body-replacement acknowledgement before any Markdown replacement | Implemented locally; native Lexical editing deferred |
-| P2 | Patch semantics are incomplete | Add nullable draft fields and published feature-image replacement | Implemented and integration-verified; release pending |
-| P2 | Discovery is narrow | Add bounded author/date/order filters, not arbitrary NQL | Implemented and integration-verified; release pending |
-| P2 | Pages require Ghost Admin handoff | Add a separate guarded Pages workflow for Ghost-rendered and headless sites | Implemented and integration-verified; usage review and release pending |
-| P2 | v0.4 was implemented before observed v0.3 usage | Keep v0.4 unpublished until v0.3 usage confirms the Pages workflow and naming | Open release gate; implementation may remain ready |
+| P0 | Roadmap and implementation branches were unmerged | Merge PR [#8](https://github.com/BoraGkc/ghost-publisher-mcp/pull/8) and PR [#7](https://github.com/BoraGkc/ghost-publisher-mcp/pull/7) | Closed in v0.4.0 |
+| P0 | Deployment behavior contradicted documentation | Publish/unpublish deploy once after complete success; published metadata updates deploy only through a separate approved call; never retry writes | Released in v0.4.0 |
+| P1 | Approval was instructions-only | Require caller-attested literal confirmation at the schema boundary | Released in v0.4.0 |
+| P1 | No read-only mode | Validate `GHOST_READ_ONLY`; hide all write tools when enabled | Released in v0.4.0 |
+| P1 | No scheduling or author assignment | Add bounded author and scheduling tools | Released in v0.4.0 |
+| P1 | Setup was client-specific and manual | Add one interactive local installer for Codex, Cursor, and Claude Desktop | Released in v0.4.0 |
+| P1 | Current client releases need ongoing smoke coverage | Exercise current Codex, Cursor, and Claude Desktop releases after client updates | Monitor |
+| P1 | Draft body updates can lose Ghost structure | Require literal body-replacement acknowledgement before any Markdown replacement | Released; native Lexical editing deferred |
+| P2 | Patch semantics were incomplete | Add nullable draft fields and published feature-image replacement | Released in v0.4.0 |
+| P2 | Discovery was narrow | Add bounded author/date/order filters, not arbitrary NQL | Released in v0.4.0 |
+| P2 | Pages required Ghost Admin handoff | Add a separate guarded Pages workflow for Ghost-rendered and headless sites | Released in v0.4.0; monitor usage |
 | P3 | Optimizer workflow is Codex-specific | Add portable MCP prompts while retaining the richer Codex skill | Demand-gated after v0.3 |
 
 ## Delivery order
 
-1. Establish this documentation hierarchy.
-2. Complete v0.2 confirmation, read-only, body-replacement, and deployment contracts.
-3. Complete v0.2 tests, release automation, and documentation synchronization.
-4. Run all release gates, perform separately approved live acceptance, tag `v0.2.0`, and verify npm plus Registry publication.
-5. Ship v0.2.1 onboarding without changing the MCP tool surface.
-6. Implement v0.3 author, bounded discovery, patch, and scheduling semantics.
-7. Validate v0.3 against disposable Ghost 5 and 6, then review observed usage.
-8. Implement the v0.4 Pages vertical and validate it against Ghost 5 and 6.
-9. Reassess broader interoperability only from observed usage.
+1. v0.4.0 consolidated release: complete.
+2. Monitor setup, scheduling, and Pages usage across supported clients.
+3. Run the Ortak Alan SEO workflow only after separate approval for one exact patch and deployment.
+4. Correct release defects with the next patch version; never overwrite v0.4.0.
+5. Reassess broader interoperability only from observed usage.
 
 ## Non-goals
 
