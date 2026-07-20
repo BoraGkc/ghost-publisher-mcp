@@ -11,6 +11,7 @@ describe('configuration boundary', () => {
       GHOST_READ_ONLY: 'true',
       GHOST_DEPLOY_HOOK_URL: 'https://deploy.example.com/hook?secret=yes',
       GHOST_PUBLIC_POST_URL_TEMPLATE: 'https://example.com/posts/{slug}',
+      GHOST_PUBLIC_PAGE_URL_TEMPLATE: 'https://example.com/{slug}',
     });
 
     expect(config.ghostUrl).toBe('https://example.com');
@@ -18,6 +19,7 @@ describe('configuration boundary', () => {
     expect(publicConfig(config)).toMatchObject({
       read_only: true,
       deploy_hook_host: 'deploy.example.com',
+      page_live_check_configured: true,
     });
     expect(publicConfig(config)).not.toHaveProperty('ghostAdminApiKey');
     expect(redactSecrets(`bad ${key} ${config.deployHookUrl}`, config)).toBe(
@@ -36,6 +38,13 @@ describe('configuration boundary', () => {
         GHOST_PUBLIC_POST_URL_TEMPLATE: 'https://example.com/posts',
       }),
     ).toThrow('must contain {slug}');
+    expect(() =>
+      loadConfig({
+        GHOST_URL: 'https://example.com',
+        GHOST_ADMIN_API_KEY: key,
+        GHOST_PUBLIC_PAGE_URL_TEMPLATE: 'http://remote.example.com/{slug}',
+      }),
+    ).toThrow('must use HTTPS');
     expect(() =>
       loadConfig({ GHOST_URL: 'https://example.com', GHOST_ADMIN_API_KEY: key, GHOST_READ_ONLY: 'yes' }),
     ).toThrow('GHOST_READ_ONLY must be true or false');

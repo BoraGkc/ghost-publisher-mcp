@@ -122,7 +122,7 @@ describe('setup CLI', () => {
     expect(config.theme).toBe('dark');
     expect(config.mcpServers.other).toEqual({ command: 'other' });
     expect(config.mcpServers['ghost-publisher']).toMatchObject({
-      args: ['-y', 'ghost-publisher-mcp@0.3.0'],
+      args: ['-y', 'ghost-publisher-mcp@0.4.0'],
       env: { GHOST_URL: 'https://example.com', GHOST_ADMIN_API_KEY: key },
     });
     expect(io.text()).not.toContain(key);

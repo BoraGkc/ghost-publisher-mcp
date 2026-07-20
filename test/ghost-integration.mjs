@@ -73,6 +73,7 @@ const config = {
 const publisher = new GhostPublisher(config);
 const api = new GhostAdminAPI({ url: ghostUrl, key: adminKey, version: 'v5.0' });
 let created;
+let createdPage;
 
 try {
   const image = await publisher.uploadImage(imagePath);
@@ -148,8 +149,49 @@ try {
     'draft',
   );
   assert.equal(unpublished.succeeded[0]?.status, 'draft');
+
+  const pageSlug = `ghost-publisher-page-${Date.now()}`;
+  const pageBatch = await publisher.createPageDrafts([
+    { title: 'Integration page', slug: pageSlug, markdown: '# Page works' },
+  ]);
+  assert.equal(pageBatch.failed.length, 0);
+  createdPage = pageBatch.succeeded[0];
+  assert.equal(createdPage.status, 'draft');
+  const updatedPage = await publisher.updatePageDraft({
+    id: createdPage.id,
+    updated_at: createdPage.updated_at,
+    markdown: '# Page works\n\nUpdated safely.',
+    body_replacement_confirmed: true,
+    excerpt: 'Integration page excerpt',
+  });
+  const publishedPage = await publisher.transitionPages(
+    [{ id: updatedPage.id, updated_at: updatedPage.updated_at }],
+    'published',
+  );
+  assert.equal(publishedPage.succeeded[0]?.status, 'published');
+  const pageDetails = await publisher.getPage(publishedPage.succeeded[0].id);
+  assert.match(pageDetails.html, /Updated safely/);
+  const optimizedPage = await publisher.updatePublishedPage({
+    id: pageDetails.id,
+    updated_at: pageDetails.updated_at,
+    meta_title: 'Integration page SEO title',
+    meta_description: 'Integration page SEO description',
+  });
+  const optimizedPageDetails = await publisher.getPage(optimizedPage.id);
+  assert.equal(optimizedPageDetails.status, 'published');
+  assert.match(optimizedPageDetails.html, /Updated safely/);
+  const livePage = await publisher.checkLivePages([
+    { id: optimizedPageDetails.id, updated_at: optimizedPageDetails.updated_at },
+  ]);
+  assert.equal(livePage[0]?.verified, true);
+  const unpublishedPage = await publisher.transitionPages(
+    [{ id: optimizedPageDetails.id, updated_at: optimizedPageDetails.updated_at }],
+    'draft',
+  );
+  assert.equal(unpublishedPage.succeeded[0]?.status, 'draft');
   console.log(`Ghost ${process.env.GHOST_IMAGE ?? ''} integration passed`);
 } finally {
+  if (createdPage) await api.pages.delete({ id: createdPage.id });
   if (created) await api.posts.delete({ id: created.id });
   await rm(uploadRoot, { recursive: true, force: true });
 }

@@ -5,7 +5,17 @@ import { fileTypeFromBuffer } from 'file-type';
 import FormData from 'form-data';
 import MarkdownIt from 'markdown-it';
 import { redactSecrets, type Config } from './config.js';
-import type { BatchResult, DeployResult, DraftInput, ImageAsset, PostRef, PublishedPostPatch } from './types.js';
+import type {
+  BatchResult,
+  DeployResult,
+  DraftInput,
+  ImageAsset,
+  PageInput,
+  PageRef,
+  PostRef,
+  PublishedPagePatch,
+  PublishedPostPatch,
+} from './types.js';
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif']);
@@ -75,6 +85,43 @@ function postRef(post: any): PostRef {
   };
 }
 
+function pageRef(page: any): PageRef {
+  return {
+    id: String(page.id),
+    title: String(page.title ?? ''),
+    slug: String(page.slug ?? ''),
+    status: String(page.status ?? ''),
+    updated_at: String(page.updated_at ?? ''),
+    ...(page.created_at ? { created_at: String(page.created_at) } : {}),
+    ...(page.url ? { url: String(page.url) } : {}),
+    ...(page.published_at ? { published_at: String(page.published_at) } : {}),
+    ...(page.custom_excerpt ? { custom_excerpt: String(page.custom_excerpt) } : {}),
+  };
+}
+
+function details<T extends PostRef | PageRef>(content: any, ref: T) {
+  return {
+    ...ref,
+    html: String(content.html ?? ''),
+    lexical: String(content.lexical ?? ''),
+    feature_image: content.feature_image ? String(content.feature_image) : null,
+    feature_image_alt: content.feature_image_alt == null ? null : String(content.feature_image_alt),
+    feature_image_caption:
+      content.feature_image_caption == null ? null : String(content.feature_image_caption),
+    custom_excerpt: content.custom_excerpt == null ? null : String(content.custom_excerpt),
+    meta_title: content.meta_title == null ? null : String(content.meta_title),
+    meta_description: content.meta_description == null ? null : String(content.meta_description),
+    canonical_url: content.canonical_url == null ? null : String(content.canonical_url),
+    og_title: content.og_title == null ? null : String(content.og_title),
+    og_description: content.og_description == null ? null : String(content.og_description),
+    og_image: content.og_image == null ? null : String(content.og_image),
+    twitter_title: content.twitter_title == null ? null : String(content.twitter_title),
+    twitter_description:
+      content.twitter_description == null ? null : String(content.twitter_description),
+    twitter_image: content.twitter_image == null ? null : String(content.twitter_image),
+  };
+}
+
 type GhostFieldInput = {
   title?: string;
   markdown?: string;
@@ -127,6 +174,16 @@ function ghostFields(input: GhostFieldInput): Record<string, unknown> {
 
 function ghostDraft(input: DraftInput & { slug: string }): Record<string, unknown> {
   return { ...ghostFields(input), status: 'draft' };
+}
+
+function safePublicUrl(value: string): string {
+  const url = new URL(value);
+  if (url.username || url.password) throw new Error('Public page URL must not contain credentials');
+  const local = ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) {
+    throw new Error('Public page URL must use HTTPS (HTTP is allowed only for localhost)');
+  }
+  return url.toString();
 }
 
 export class GhostPublisher {
@@ -200,25 +257,7 @@ export class GhostPublisher {
       byId ? { id: idOrSlug } : { slug: idOrSlug },
       { formats: ['html', 'lexical'], include: 'tags,authors' },
     );
-    return {
-      ...postRef(post),
-      html: String(post.html ?? ''),
-      lexical: String(post.lexical ?? ''),
-      feature_image: post.feature_image ? String(post.feature_image) : null,
-      feature_image_alt: post.feature_image_alt == null ? null : String(post.feature_image_alt),
-      feature_image_caption: post.feature_image_caption == null ? null : String(post.feature_image_caption),
-      featured: Boolean(post.featured),
-      custom_excerpt: post.custom_excerpt == null ? null : String(post.custom_excerpt),
-      meta_title: post.meta_title == null ? null : String(post.meta_title),
-      meta_description: post.meta_description == null ? null : String(post.meta_description),
-      canonical_url: post.canonical_url == null ? null : String(post.canonical_url),
-      og_title: post.og_title == null ? null : String(post.og_title),
-      og_description: post.og_description == null ? null : String(post.og_description),
-      og_image: post.og_image == null ? null : String(post.og_image),
-      twitter_title: post.twitter_title == null ? null : String(post.twitter_title),
-      twitter_description: post.twitter_description == null ? null : String(post.twitter_description),
-      twitter_image: post.twitter_image == null ? null : String(post.twitter_image),
-    };
+    return { ...details(post, postRef(post)), featured: Boolean(post.featured) };
   }
 
   async listTags(options: { search?: string; limit: number; page: number }) {
@@ -260,9 +299,60 @@ export class GhostPublisher {
     };
   }
 
+  async listPages(options: {
+    status?: 'draft' | 'published' | 'all';
+    search?: string;
+    updated_after?: string;
+    updated_before?: string;
+    published_after?: string;
+    published_before?: string;
+    order?: PostOrder;
+    limit: number;
+    page: number;
+  }) {
+    const filters: string[] = [];
+    if (options.status && options.status !== 'all') filters.push(`status:${options.status}`);
+    if (options.search) filters.push(`title:~'${nql(options.search)}'`);
+    if (options.updated_after) filters.push(`updated_at:>'${nql(options.updated_after)}'`);
+    if (options.updated_before) filters.push(`updated_at:<'${nql(options.updated_before)}'`);
+    if (options.published_after) filters.push(`published_at:>'${nql(options.published_after)}'`);
+    if (options.published_before) filters.push(`published_at:<'${nql(options.published_before)}'`);
+    const order = {
+      updated_at_desc: 'updated_at desc',
+      updated_at_asc: 'updated_at asc',
+      published_at_desc: 'published_at desc',
+      published_at_asc: 'published_at asc',
+    }[options.order ?? 'updated_at_desc'];
+    const rows = await this.ghost.pages.browse({
+      limit: Math.min(options.limit, 50),
+      page: options.page,
+      order,
+      ...(filters.length ? { filter: filters.join('+') } : {}),
+    });
+    return { pages: Array.from(rows, pageRef), meta: rows.meta ?? {} };
+  }
+
+  async getPage(idOrSlug: string) {
+    const byId = /^[a-f\d]{24}$/i.test(idOrSlug);
+    const page = await this.ghost.pages.read(
+      byId ? { id: idOrSlug } : { slug: idOrSlug },
+      { formats: ['html', 'lexical'] },
+    );
+    return details(page, pageRef(page));
+  }
+
   private async postBySlug(slug: string): Promise<any | undefined> {
     try {
       return await this.ghost.posts.read({ slug }, { formats: 'html' });
+    } catch (error) {
+      if (isNotFound(error)) return undefined;
+      throw error;
+    }
+  }
+
+  private async pageBySlug(slug: string): Promise<any | undefined> {
+    try {
+      return await this.ghost.pages.read({ slug }, { formats: 'html' });
     } catch (error) {
       if (isNotFound(error)) return undefined;
       throw error;
@@ -287,6 +377,31 @@ export class GhostPublisher {
       try {
         const created = await this.ghost.posts.add(ghostDraft(input), { source: 'html' });
         result.succeeded.push(postRef(created));
+      } catch (error) {
+        result.failed.push({ title: input.title, error: errorMessage(error, this.config) });
+      }
+    }
+    result.partial_failure = result.succeeded.length > 0 && result.failed.length > 0;
+    return result;
+  }
+
+  async createPageDrafts(inputs: PageInput[]): Promise<BatchResult<PageRef>> {
+    const prepared = inputs.map((input) => ({ ...input, slug: input.slug || slugify(input.title) }));
+    if (prepared.some((input) => !input.slug)) throw new Error('Every page needs a usable title or slug');
+    if (new Set(prepared.map((input) => input.slug)).size !== prepared.length) {
+      throw new Error('Page slugs must be unique within the batch');
+    }
+    const existing = await Promise.all(prepared.map((input) => this.pageBySlug(input.slug)));
+    const conflicts = existing.filter(Boolean).map(pageRef);
+    if (conflicts.length) {
+      throw new Error(`Page slug already exists: ${conflicts.map((page) => page.slug).join(', ')}`);
+    }
+
+    const result: BatchResult<PageRef> = { succeeded: [], failed: [], partial_failure: false };
+    for (const input of prepared) {
+      try {
+        const created = await this.ghost.pages.add({ ...ghostFields(input), status: 'draft' }, { source: 'html' });
+        result.succeeded.push(pageRef(created));
       } catch (error) {
         result.failed.push({ title: input.title, error: errorMessage(error, this.config) });
       }
@@ -333,6 +448,46 @@ export class GhostPublisher {
       { save_revision: true },
     );
     return postRef(updated);
+  }
+
+  async updatePageDraft(
+    input: Partial<PageInput> & {
+      id: string;
+      updated_at: string;
+      body_replacement_confirmed?: true;
+    },
+  ): Promise<PageRef> {
+    if (input.markdown !== undefined && input.body_replacement_confirmed !== true) {
+      throw new Error('Replacing a page body requires body_replacement_confirmed=true');
+    }
+    const current = await this.ghost.pages.read({ id: input.id }, { formats: 'html' });
+    if (current.status !== 'draft') throw new Error('update_page_draft only accepts draft pages');
+    if (String(current.updated_at) !== input.updated_at) {
+      throw new Error('Page changed since it was read; fetch it again before updating');
+    }
+    const updated = await this.ghost.pages.edit(
+      { id: input.id, updated_at: input.updated_at, ...ghostFields(input) },
+      input.markdown !== undefined ? { source: 'html' } : {},
+    );
+    return pageRef(updated);
+  }
+
+  async updatePublishedPage(
+    input: PublishedPagePatch & { id: string; updated_at: string },
+  ): Promise<PageRef> {
+    if ('markdown' in input || 'html' in input || 'lexical' in input) {
+      throw new Error('Published page bodies are read-only');
+    }
+    const current = await this.ghost.pages.read({ id: input.id });
+    if (current.status !== 'published') throw new Error('update_published_page only accepts published pages');
+    if (String(current.updated_at) !== input.updated_at) {
+      throw new Error('Page changed since it was read; fetch it again before updating');
+    }
+    const updated = await this.ghost.pages.edit(
+      { id: input.id, updated_at: input.updated_at, ...ghostFields(input) },
+      { save_revision: true },
+    );
+    return pageRef(updated);
   }
 
   private async validateTransitions(
@@ -425,6 +580,66 @@ export class GhostPublisher {
     return this.editPostBatch(targets, 'scheduled', (target) => ({ ...target, status: 'draft' }), false);
   }
 
+  private async validatePageTransitions(
+    targets: TransitionTarget[],
+    expectedStatus: 'draft' | 'published',
+  ): Promise<Map<string, string>> {
+    const errors = new Map<string, string>();
+    await Promise.all(
+      targets.map(async (target) => {
+        try {
+          const page = await this.ghost.pages.read({ id: target.id });
+          if (page.status !== expectedStatus) {
+            errors.set(target.id, `Expected ${expectedStatus}, found ${String(page.status)}`);
+          } else if (String(page.updated_at) !== target.updated_at) {
+            errors.set(target.id, 'Page changed since it was read');
+          }
+        } catch (error) {
+          errors.set(target.id, errorMessage(error, this.config));
+        }
+      }),
+    );
+    return errors;
+  }
+
+  async transitionPages(
+    targets: TransitionTarget[],
+    status: 'draft' | 'published',
+  ): Promise<BatchResult<PageRef>> {
+    if (new Set(targets.map((target) => target.id)).size !== targets.length) {
+      throw new Error('Page IDs must be unique within the batch');
+    }
+    const expected = status === 'published' ? 'draft' : 'published';
+    const errors = await this.validatePageTransitions(targets, expected);
+    if (errors.size) {
+      return {
+        succeeded: [],
+        failed: targets.map((target) => ({
+          id: target.id,
+          error: errors.get(target.id) ?? 'Batch preflight aborted because another target failed',
+        })),
+        partial_failure: false,
+      };
+    }
+
+    const result: BatchResult<PageRef> = { succeeded: [], failed: [], partial_failure: false };
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index]!;
+      try {
+        result.succeeded.push(pageRef(await this.ghost.pages.edit({ ...target, status })));
+      } catch (error) {
+        result.failed.push({ id: target.id, error: errorMessage(error, this.config) });
+        for (const remaining of targets.slice(index + 1)) {
+          result.failed.push({ id: remaining.id, error: 'Not attempted after an earlier write failed' });
+        }
+        break;
+      }
+    }
+    result.partial_failure = result.succeeded.length > 0 && result.failed.length > 0;
+    if (!result.failed.length && this.config.deployHookUrl) result.deploy = await this.triggerDeploy();
+    return result;
+  }
+
   async uploadImage(filePath: string): Promise<ImageAsset> {
     if (!this.config.uploadRoots.length) {
       throw new Error('GHOST_UPLOAD_ROOTS must be configured before uploading local files');
@@ -505,7 +720,10 @@ export class GhostPublisher {
       posts.map(async (post) => {
         const url = this.config.publicPostUrlTemplate!.replace('{slug}', encodeURIComponent(post.slug));
         try {
-          const response = await this.request(url, { signal: AbortSignal.timeout(15_000) });
+          const response = await this.request(url, {
+            redirect: 'error',
+            signal: AbortSignal.timeout(15_000),
+          });
           const body = await response.text();
           const rendered = renderedMetadata(body);
           const titleMatch = response.ok && decodeHtml(body.replace(/<[^>]+>/g, ' ')).includes(post.title);
@@ -540,6 +758,61 @@ export class GhostPublisher {
             url,
             status: 0,
             title_match: false,
+            verified: false,
+            error: errorMessage(error, this.config),
+          };
+        }
+      }),
+    );
+  }
+
+  async checkLivePages(targets: TransitionTarget[]) {
+    if (new Set(targets.map((target) => target.id)).size !== targets.length) {
+      throw new Error('Page IDs must be unique within the batch');
+    }
+    return Promise.all(
+      targets.map(async (target) => {
+        try {
+          const page = await this.ghost.pages.read({ id: target.id });
+          if (page.status !== 'published') throw new Error(`Expected published, found ${String(page.status)}`);
+          if (String(page.updated_at) !== target.updated_at) throw new Error('Page changed since it was read');
+          const selectedUrl = this.config.publicPageUrlTemplate
+            ? this.config.publicPageUrlTemplate.replace('{slug}', encodeURIComponent(String(page.slug)))
+            : String(page.url ?? '');
+          if (!selectedUrl) throw new Error('Ghost returned no public page URL');
+          const url = safePublicUrl(selectedUrl);
+          const response = await this.request(url, {
+            redirect: 'error',
+            signal: AbortSignal.timeout(15_000),
+          });
+          const body = await response.text();
+          const rendered = renderedMetadata(body);
+          const titleMatch = response.ok && decodeHtml(body.replace(/<[^>]+>/g, ' ')).includes(String(page.title));
+          const expectedCanonical = String(page.canonical_url ?? url);
+          const canonicalUrlMatch = rendered.canonical === expectedCanonical;
+          const metaTitleMatch = page.meta_title == null || rendered.title === String(page.meta_title);
+          const metaDescriptionMatch =
+            page.meta_description == null || rendered.description === String(page.meta_description);
+          return {
+            id: target.id,
+            slug: String(page.slug),
+            url,
+            status: response.status,
+            title_match: titleMatch,
+            canonical_url_match: response.ok && canonicalUrlMatch,
+            ...(page.meta_title != null ? { meta_title_match: response.ok && metaTitleMatch } : {}),
+            ...(page.meta_description != null
+              ? { meta_description_match: response.ok && metaDescriptionMatch }
+              : {}),
+            verified:
+              response.ok && titleMatch && canonicalUrlMatch && metaTitleMatch && metaDescriptionMatch,
+          };
+        } catch (error) {
+          return {
+            id: target.id,
+            status: 0,
+            title_match: false,
+            canonical_url_match: false,
             verified: false,
             error: errorMessage(error, this.config),
           };

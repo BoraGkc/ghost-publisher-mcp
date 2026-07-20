@@ -35,6 +35,9 @@ const postDetailsSchema = postRefSchema.omit({ custom_excerpt: true }).extend({
   twitter_image: z.string().nullable(),
 });
 
+const pageRefSchema = postRefSchema.omit({ tags: true, authors: true }).extend({ created_at: z.string().optional() });
+const pageDetailsSchema = postDetailsSchema.omit({ tags: true, authors: true, featured: true });
+
 const deploySchema = z.object({
   accepted: z.boolean(),
   host: z.string(),
@@ -54,6 +57,8 @@ const batchSchema = z.object({
   partial_failure: z.boolean(),
   deploy: deploySchema.optional(),
 });
+
+const pageBatchSchema = batchSchema.extend({ succeeded: z.array(pageRefSchema) });
 
 const imageSchema = z.object({
   url: z.string(),
@@ -120,15 +125,47 @@ const draftPatchSchema = draftSchema
   })
   .refine((patch) => Object.keys(patch).length > 0, { message: 'Provide at least one field to update' });
 
+const pageDraftSchema = draftSchema.omit({ tags: true, authors: true, featured: true }).strict();
+const pageDraftPatchSchema = pageDraftSchema
+  .partial()
+  .extend({
+    excerpt: nullableText(500).optional(),
+    feature_image_url: nullableUrl.optional(),
+    feature_image_alt: nullableText(500).optional(),
+    feature_image_caption: nullableText(1000).optional(),
+    meta_title: nullableText(300).optional(),
+    meta_description: nullableText(500).optional(),
+    canonical_url: nullableUrl.optional(),
+    og_title: nullableText(300).optional(),
+    og_description: nullableText(500).optional(),
+    og_image: nullableUrl.optional(),
+    twitter_title: nullableText(300).optional(),
+    twitter_description: nullableText(500).optional(),
+    twitter_image: nullableUrl.optional(),
+  })
+  .refine((patch) => Object.keys(patch).length > 0, { message: 'Provide at least one field to update' });
+
 const updateDraftSchema = z
   .object({
     id: ghostIdSchema,
-    updated_at: z.string().min(1),
+    updated_at: timestampSchema,
     patch: draftPatchSchema,
     body_replacement_confirmed: z.literal(true).optional(),
   })
   .refine((input) => input.patch.markdown === undefined || input.body_replacement_confirmed === true, {
     message: 'Replacing a draft body requires body_replacement_confirmed=true',
+    path: ['body_replacement_confirmed'],
+  });
+
+const updatePageDraftSchema = z
+  .object({
+    id: ghostIdSchema,
+    updated_at: timestampSchema,
+    patch: pageDraftPatchSchema,
+    body_replacement_confirmed: z.literal(true).optional(),
+  })
+  .refine((input) => input.patch.markdown === undefined || input.body_replacement_confirmed === true, {
+    message: 'Replacing a page body requires body_replacement_confirmed=true',
     path: ['body_replacement_confirmed'],
   });
 
@@ -154,8 +191,9 @@ const publishedPatchSchema = z
 
 const targetSchema = z.object({
   id: ghostIdSchema,
-  updated_at: z.string().min(1),
+  updated_at: timestampSchema,
 });
+const pageTargetSchema = targetSchema.strict();
 
 const listContentSchema = z
   .object({
@@ -163,6 +201,31 @@ const listContentSchema = z
     tag: z.string().min(1).optional(),
     search: z.string().min(1).optional(),
     author_id: ghostIdSchema.optional(),
+    updated_after: timestampSchema.optional(),
+    updated_before: timestampSchema.optional(),
+    published_after: timestampSchema.optional(),
+    published_before: timestampSchema.optional(),
+    order: z
+      .enum(['updated_at_desc', 'updated_at_asc', 'published_at_desc', 'published_at_asc'])
+      .default('updated_at_desc'),
+    limit: z.number().int().min(1).max(50).default(15),
+    page: z.number().int().min(1).default(1),
+  })
+  .superRefine((input, context) => {
+    for (const [after, before, path] of [
+      [input.updated_after, input.updated_before, 'updated_before'],
+      [input.published_after, input.published_before, 'published_before'],
+    ] as const) {
+      if (after && before && Date.parse(after) >= Date.parse(before)) {
+        context.addIssue({ code: 'custom', message: 'The before timestamp must be later than after', path: [path] });
+      }
+    }
+  });
+
+const listPagesSchema = z
+  .object({
+    status: z.enum(['draft', 'published', 'all']).default('all'),
+    search: z.string().min(1).optional(),
     updated_after: timestampSchema.optional(),
     updated_before: timestampSchema.optional(),
     published_after: timestampSchema.optional(),
@@ -205,10 +268,10 @@ function failure(error: unknown, config: Config) {
 
 export function createServer(publisher: GhostPublisher): McpServer {
   const server = new McpServer(
-    { name: 'ghost-publisher-mcp', version: '0.3.0' },
+    { name: 'ghost-publisher-mcp', version: '0.4.0' },
     {
       instructions:
-        'Create drafts first. Before updating, publishing, scheduling, or unpublishing, read posts and pass exact id and updated_at values. Destructive tools require user_confirmed=true after explicit approval for the exact action. Markdown draft updates replace the complete body and require body_replacement_confirmed=true. Successful publish and unpublish batches deploy exactly once when configured; scheduling never deploys or sends newsletters. Published metadata updates require one separate approved trigger_deploy call.',
+        'Create post and page drafts first. Before updating, publishing, scheduling, or unpublishing, read the content and pass exact id and updated_at values. Destructive tools require user_confirmed=true after explicit approval for the exact action. Markdown draft updates replace the complete body and require body_replacement_confirmed=true. Successful publish and unpublish batches deploy exactly once when configured; scheduling never deploys or sends newsletters. Published metadata updates require one separate approved trigger_deploy call.',
     },
   );
   const fail = (error: unknown) => failure(error, publisher.config);
@@ -228,6 +291,7 @@ export function createServer(publisher: GhostPublisher): McpServer {
           deploy_hook_host: z.string().optional(),
           upload_roots_configured: z.boolean(),
           live_check_configured: z.boolean(),
+          page_live_check_configured: z.boolean(),
         }),
       }),
       annotations: readOnly,
@@ -334,6 +398,44 @@ export function createServer(publisher: GhostPublisher): McpServer {
     },
   );
 
+  server.registerTool(
+    'list_pages',
+    {
+      title: 'List Ghost pages',
+      description: 'List bounded Ghost page records and obtain exact IDs plus updated_at values.',
+      inputSchema: listPagesSchema,
+      outputSchema: z.object({ pages: z.array(pageRefSchema), meta: z.record(z.string(), z.unknown()) }),
+      annotations: readOnly,
+    },
+    async (input) => {
+      try {
+        const data = await publisher.listPages(input);
+        return success(data, `${data.pages.length} page(s) found`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_page',
+    {
+      title: 'Get a Ghost page',
+      description: 'Get one page by exact Ghost ID or slug, including HTML, Lexical content, and complete SEO and social metadata.',
+      inputSchema: z.object({ id_or_slug: z.string().min(1) }),
+      outputSchema: z.object({ page: pageDetailsSchema }),
+      annotations: readOnly,
+    },
+    async ({ id_or_slug }) => {
+      try {
+        const page = await publisher.getPage(id_or_slug);
+        return success({ page }, `Loaded ${page.title}`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
   if (!publisher.config.readOnly) {
     server.registerTool(
       'create_drafts',
@@ -348,6 +450,25 @@ export function createServer(publisher: GhostPublisher): McpServer {
         try {
           const data = await publisher.createDrafts(posts);
           return success(data, `${data.succeeded.length} draft(s) created, ${data.failed.length} failed`);
+        } catch (error) {
+          return fail(error);
+        }
+      },
+    );
+
+    server.registerTool(
+      'create_page_drafts',
+      {
+        title: 'Create Ghost page drafts',
+        description: 'Create 1–10 Markdown pages and always force draft status. Tags, authors, templates, code injection, and scheduling are unavailable.',
+        inputSchema: z.object({ pages: z.array(pageDraftSchema).min(1).max(10) }),
+        outputSchema: pageBatchSchema,
+        annotations: write,
+      },
+      async ({ pages }) => {
+        try {
+          const data = await publisher.createPageDrafts(pages);
+          return success(data, `${data.succeeded.length} page draft(s) created, ${data.failed.length} failed`);
         } catch (error) {
           return fail(error);
         }
@@ -374,13 +495,37 @@ export function createServer(publisher: GhostPublisher): McpServer {
     );
 
     server.registerTool(
+      'update_page_draft',
+      {
+        title: 'Update a Ghost page draft',
+        description: 'Patch one unchanged page draft. Markdown replaces the complete body and requires body_replacement_confirmed=true.',
+        inputSchema: updatePageDraftSchema,
+        outputSchema: z.object({ page: pageRefSchema }),
+        annotations: write,
+      },
+      async ({ id, updated_at, patch, body_replacement_confirmed }) => {
+        try {
+          const page = await publisher.updatePageDraft({
+            id,
+            updated_at,
+            ...patch,
+            body_replacement_confirmed,
+          });
+          return success({ page }, `Updated page draft ${page.title}`);
+        } catch (error) {
+          return fail(error);
+        }
+      },
+    );
+
+    server.registerTool(
       'update_published_post',
       {
         title: 'Update a published Ghost post',
         description: 'Update approved metadata on one published post. Requires user_confirmed=true for the exact post and patch, uses updated_at collision protection, saves a Ghost revision, preserves published status, and never replaces the body.',
         inputSchema: z.object({
           id: targetSchema.shape.id,
-          updated_at: z.string().min(1),
+          updated_at: timestampSchema,
           patch: publishedPatchSchema,
           user_confirmed: z.literal(true),
         }),
@@ -391,6 +536,30 @@ export function createServer(publisher: GhostPublisher): McpServer {
         try {
           const post = await publisher.updatePublishedPost({ id, updated_at, ...patch });
           return success({ post }, `Updated published post ${post.title}`);
+        } catch (error) {
+          return fail(error);
+        }
+      },
+    );
+
+    server.registerTool(
+      'update_published_page',
+      {
+        title: 'Update a published Ghost page',
+        description: 'Update approved metadata on one published page. Requires user_confirmed=true, saves a revision, preserves published status, and never replaces the body.',
+        inputSchema: z.object({
+          id: targetSchema.shape.id,
+          updated_at: timestampSchema,
+          patch: publishedPatchSchema,
+          user_confirmed: z.literal(true),
+        }),
+        outputSchema: z.object({ page: pageRefSchema }),
+        annotations: destructive,
+      },
+      async ({ id, updated_at, patch }) => {
+        try {
+          const page = await publisher.updatePublishedPage({ id, updated_at, ...patch });
+          return success({ page }, `Updated published page ${page.title}`);
         } catch (error) {
           return fail(error);
         }
@@ -432,6 +601,32 @@ export function createServer(publisher: GhostPublisher): McpServer {
         async ({ posts }) => {
           try {
             const data = await publisher.transitionPosts(posts, status);
+            const deployFailed = data.deploy?.accepted === false;
+            const text = `${data.succeeded.length} changed, ${data.failed.length} failed${deployFailed ? '; deployment failed' : ''}`;
+            return success(data, text, deployFailed);
+          } catch (error) {
+            return fail(error);
+          }
+        },
+      );
+    }
+
+    for (const [name, status, title] of [
+      ['publish_pages', 'published', 'Publish Ghost pages'],
+      ['unpublish_pages', 'draft', 'Unpublish Ghost pages'],
+    ] as const) {
+      server.registerTool(
+        name,
+        {
+          title,
+          description: `${title} as an exact, version-checked batch after user_confirmed=true. A configured deploy hook runs exactly once after complete success.`,
+          inputSchema: z.object({ pages: z.array(pageTargetSchema).min(1).max(25), user_confirmed: z.literal(true) }),
+          outputSchema: pageBatchSchema,
+          annotations: destructive,
+        },
+        async ({ pages }) => {
+          try {
+            const data = await publisher.transitionPages(pages, status);
             const deployFailed = data.deploy?.accepted === false;
             const text = `${data.succeeded.length} changed, ${data.failed.length} failed${deployFailed ? '; deployment failed' : ''}`;
             return success(data, text, deployFailed);
@@ -547,6 +742,43 @@ export function createServer(publisher: GhostPublisher): McpServer {
       try {
         const checks = await publisher.checkLivePosts(posts);
         return success({ posts: checks }, `${checks.filter((check) => check.verified).length}/${checks.length} verified`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'check_live_pages',
+    {
+      title: 'Check published Ghost pages',
+      description: 'Read exact current published pages, select each public URL from Ghost or GHOST_PUBLIC_PAGE_URL_TEMPLATE, and verify HTTP status, title, canonical URL, and configured SEO metadata once.',
+      inputSchema: z.object({ pages: z.array(pageTargetSchema).min(1).max(25) }),
+      outputSchema: z.object({
+        pages: z.array(
+          z.object({
+            id: z.string(),
+            slug: z.string().optional(),
+            url: z.string().optional(),
+            status: z.number(),
+            title_match: z.boolean(),
+            canonical_url_match: z.boolean(),
+            meta_title_match: z.boolean().optional(),
+            meta_description_match: z.boolean().optional(),
+            verified: z.boolean(),
+            error: z.string().optional(),
+          }),
+        ),
+      }),
+      annotations: readOnly,
+    },
+    async ({ pages }) => {
+      try {
+        const checks = await publisher.checkLivePages(pages);
+        return success(
+          { pages: checks },
+          `${checks.filter((check) => check.verified).length}/${checks.length} verified`,
+        );
       } catch (error) {
         return fail(error);
       }

@@ -8,6 +8,7 @@ export type Config = {
   uploadRoots: string[];
   deployHookUrl?: string;
   publicPostUrlTemplate?: string;
+  publicPageUrlTemplate?: string;
 };
 
 const ADMIN_KEY = /^[a-f\d]{24}:[a-f\d]{64}$/i;
@@ -40,16 +41,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const deployHookUrl = env.GHOST_DEPLOY_HOOK_URL
     ? safeUrl(env.GHOST_DEPLOY_HOOK_URL, 'GHOST_DEPLOY_HOOK_URL')
     : undefined;
-  if (env.GHOST_PUBLIC_POST_URL_TEMPLATE && !env.GHOST_PUBLIC_POST_URL_TEMPLATE.includes('{slug}')) {
-    throw new Error('GHOST_PUBLIC_POST_URL_TEMPLATE must contain {slug}');
-  }
   const templateMarker = 'ghost-publisher-slug-marker';
-  const publicPostUrlTemplate = env.GHOST_PUBLIC_POST_URL_TEMPLATE
-    ? safeUrl(
-        env.GHOST_PUBLIC_POST_URL_TEMPLATE.replace('{slug}', templateMarker),
-        'GHOST_PUBLIC_POST_URL_TEMPLATE',
-      ).replace(templateMarker, '{slug}')
-    : undefined;
+  const template = (value: string | undefined, name: string) => {
+    if (!value) return undefined;
+    if (!value.includes('{slug}')) throw new Error(`${name} must contain {slug}`);
+    return safeUrl(value.replace('{slug}', templateMarker), name).replace(templateMarker, '{slug}');
+  };
+  const publicPostUrlTemplate = template(env.GHOST_PUBLIC_POST_URL_TEMPLATE, 'GHOST_PUBLIC_POST_URL_TEMPLATE');
+  const publicPageUrlTemplate = template(env.GHOST_PUBLIC_PAGE_URL_TEMPLATE, 'GHOST_PUBLIC_PAGE_URL_TEMPLATE');
 
   return {
     ghostUrl: safeUrl(env.GHOST_URL, 'GHOST_URL'),
@@ -59,6 +58,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     uploadRoots,
     deployHookUrl,
     publicPostUrlTemplate,
+    publicPageUrlTemplate,
   };
 }
 
@@ -71,6 +71,7 @@ export function publicConfig(config: Config) {
     ...(config.deployHookUrl ? { deploy_hook_host: new URL(config.deployHookUrl).host } : {}),
     upload_roots_configured: config.uploadRoots.length > 0,
     live_check_configured: Boolean(config.publicPostUrlTemplate),
+    page_live_check_configured: Boolean(config.publicPageUrlTemplate),
   };
 }
 

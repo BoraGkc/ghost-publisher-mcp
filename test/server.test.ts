@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { readFile } from 'node:fs/promises';
 import { describe, expect, it, vi } from 'vitest';
 import type { Config } from '../src/config.js';
 import { GhostPublisher } from '../src/publisher.js';
@@ -37,7 +38,24 @@ async function connect(publisher: GhostPublisher) {
 }
 
 describe('MCP contract', () => {
-  it('advertises fifteen normal tools, requires literal destructive confirmation, and redacts errors', async () => {
+  it('keeps the package, Registry metadata, and initialized server version identical', async () => {
+    const packageMetadata = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+    const registryMetadata = JSON.parse(await readFile(new URL('../server.json', import.meta.url), 'utf8'));
+    const publisher = new GhostPublisher(
+      { ...config, readOnly: true },
+      { ghost: { site: { read: async () => ({}) } } },
+    );
+    const { client, server } = await connect(publisher);
+
+    expect(registryMetadata.version).toBe(packageMetadata.version);
+    expect(registryMetadata.packages[0].version).toBe(packageMetadata.version);
+    expect(client.getServerVersion()?.version).toBe(packageMetadata.version);
+
+    await client.close();
+    await server.close();
+  });
+
+  it('advertises twenty-three normal tools, requires literal destructive confirmation, and redacts errors', async () => {
     const edit = vi.fn(async () => {
       throw new Error(`Ghost rejected ${config.ghostAdminApiKey}`);
     });
@@ -50,9 +68,36 @@ describe('MCP contract', () => {
     const { client, server } = await connect(publisher);
 
     const tools = await client.listTools();
-    expect(tools.tools.map((tool) => tool.name)).toHaveLength(15);
+    expect(tools.tools.map((tool) => tool.name).sort()).toEqual(
+      [
+        'check_connection',
+        'list_posts',
+        'get_post',
+        'list_tags',
+        'list_authors',
+        'list_pages',
+        'get_page',
+        'create_drafts',
+        'create_page_drafts',
+        'update_draft',
+        'update_page_draft',
+        'update_published_post',
+        'update_published_page',
+        'upload_image',
+        'publish_posts',
+        'unpublish_posts',
+        'publish_pages',
+        'unpublish_pages',
+        'schedule_posts',
+        'unschedule_posts',
+        'trigger_deploy',
+        'check_live_posts',
+        'check_live_pages',
+      ].sort(),
+    );
     expect(tools.tools.map((tool) => tool.name)).not.toContain('generate_image');
     expect(tools.tools.map((tool) => tool.name)).toContain('publish_posts');
+    expect(tools.tools.map((tool) => tool.name)).toContain('publish_pages');
     expect(tools.tools.find((tool) => tool.name === 'update_published_post')?.annotations).toMatchObject({
       destructiveHint: true,
     });
@@ -62,6 +107,9 @@ describe('MCP contract', () => {
       'unpublish_posts',
       'schedule_posts',
       'unschedule_posts',
+      'update_published_page',
+      'publish_pages',
+      'unpublish_pages',
       'trigger_deploy',
     ]) {
       const schema = JSON.stringify(tools.tools.find((tool) => tool.name === name)?.inputSchema);
@@ -71,6 +119,10 @@ describe('MCP contract', () => {
     const updateSchema = tools.tools.find((tool) => tool.name === 'update_published_post')?.inputSchema;
     expect(JSON.stringify(updateSchema)).not.toContain('markdown');
     expect(JSON.stringify(updateSchema)).not.toContain('slug');
+    const pageCreateSchema = tools.tools.find((tool) => tool.name === 'create_page_drafts')?.inputSchema;
+    expect(JSON.stringify(pageCreateSchema)).not.toContain('tags');
+    expect(JSON.stringify(pageCreateSchema)).not.toContain('authors');
+    expect(JSON.stringify(pageCreateSchema)).not.toContain('featured');
 
     const result = await client.callTool({ name: 'check_connection', arguments: {} });
     expect(result.structuredContent).toMatchObject({
@@ -165,7 +217,7 @@ describe('MCP contract', () => {
     await server.close();
   });
 
-  it('advertises exactly six tools in read-only mode', async () => {
+  it('advertises exactly nine tools in read-only mode', async () => {
     const publisher = new GhostPublisher(
       { ...config, readOnly: true },
       { ghost: { site: { read: async () => ({}) }, posts: {}, tags: {} } },
@@ -174,7 +226,17 @@ describe('MCP contract', () => {
 
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name).sort()).toEqual(
-      ['check_connection', 'list_posts', 'get_post', 'list_tags', 'list_authors', 'check_live_posts'].sort(),
+      [
+        'check_connection',
+        'list_posts',
+        'get_post',
+        'list_tags',
+        'list_authors',
+        'check_live_posts',
+        'list_pages',
+        'get_page',
+        'check_live_pages',
+      ].sort(),
     );
 
     await client.close();
@@ -202,6 +264,12 @@ describe('MCP contract', () => {
         arguments: { posts: [{ id, updated_at: updatedAt, published_at: '2099-01-01T00:00:00.000Z' }] },
       },
       { name: 'unschedule_posts', arguments: { posts: [{ id, updated_at: updatedAt }] } },
+      {
+        name: 'update_published_page',
+        arguments: { id, updated_at: updatedAt, patch: { meta_title: 'No write' } },
+      },
+      { name: 'publish_pages', arguments: { pages: [{ id, updated_at: updatedAt }] } },
+      { name: 'unpublish_pages', arguments: { pages: [{ id, updated_at: updatedAt }] } },
       { name: 'trigger_deploy', arguments: {} },
     ];
 
@@ -243,6 +311,38 @@ describe('MCP contract', () => {
     });
     expect(metadata.isError).not.toBe(true);
     expect(edit).toHaveBeenCalledOnce();
+
+    await client.close();
+    await server.close();
+  });
+
+  it('guards page body replacement and rejects caller-provided live URLs before network access', async () => {
+    const read = vi.fn(async () => ({ ...post('draft'), tags: undefined }));
+    const edit = vi.fn(async (input: Record<string, unknown>) => ({ ...post('draft'), ...input }));
+    const request = vi.fn();
+    const publisher = new GhostPublisher(config, {
+      ghost: { pages: { read, edit } },
+      fetch: request,
+    });
+    const { client, server } = await connect(publisher);
+
+    const rejectedBody = await client.callTool({
+      name: 'update_page_draft',
+      arguments: { id, updated_at: updatedAt, patch: { markdown: '# Replacement' } },
+    });
+    const rejectedUrl = await client.callTool({
+      name: 'check_live_pages',
+      arguments: {
+        pages: [{ id, updated_at: updatedAt, url: 'https://attacker.example/private' }],
+      },
+    });
+
+    expect(rejectedBody.isError).toBe(true);
+    expect(rejectedUrl.isError).toBe(true);
+    expect(JSON.stringify(rejectedUrl.content)).toContain('Invalid arguments');
+    expect(read).not.toHaveBeenCalled();
+    expect(edit).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
 
     await client.close();
     await server.close();

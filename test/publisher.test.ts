@@ -31,6 +31,18 @@ function post(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function page(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'd'.repeat(24),
+    title: 'About',
+    slug: 'about',
+    status: 'draft',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    url: 'https://ghost.example.com/about/',
+    ...overrides,
+  };
+}
+
 describe('publishing service', () => {
   it('uses only bounded discovery filters and returns ordered public authors', async () => {
     const rows = Object.assign(
@@ -495,6 +507,213 @@ describe('publishing service', () => {
       error: 'request to [REDACTED] failed',
     });
     expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the bounded Ghost Pages surface and always creates page drafts', async () => {
+    const rows = Object.assign([page()], { meta: { pagination: { page: 1 } } });
+    const browse = vi.fn(async () => rows);
+    const read = vi.fn(async () => Promise.reject(new Error('404 not found')));
+    const add = vi.fn(async (...args: [Record<string, unknown>, Record<string, unknown>?]) => page(args[0]));
+    const remove = vi.fn();
+    const publisher = new GhostPublisher(baseConfig, {
+      ghost: { pages: { browse, read, add, delete: remove } },
+    });
+
+    const listed = await publisher.listPages({
+      status: 'published',
+      search: "Editor's page",
+      updated_after: '2026-01-01T00:00:00.000Z',
+      updated_before: '2026-02-01T00:00:00.000Z',
+      order: 'updated_at_asc',
+      limit: 15,
+      page: 1,
+    });
+    const created = await publisher.createPageDrafts([
+      { title: 'About', markdown: '# About', excerpt: 'Page excerpt' },
+    ]);
+
+    expect(browse).toHaveBeenCalledWith({
+      limit: 15,
+      page: 1,
+      order: 'updated_at asc',
+      filter:
+        "status:published+title:~'Editor\\'s page'+updated_at:>'2026-01-01T00:00:00.000Z'+updated_at:<'2026-02-01T00:00:00.000Z'",
+    });
+    expect(listed.pages[0]).not.toHaveProperty('tags');
+    expect(add.mock.calls[0]?.[0]).toMatchObject({ status: 'draft', html: '<h1>About</h1>\n' });
+    expect(add.mock.calls[0]?.[1]).toEqual({ source: 'html' });
+    expect(created.succeeded[0]).not.toHaveProperty('authors');
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('guards page body replacement and saves published page metadata as a revision', async () => {
+    const readDraft = vi.fn(async () => page());
+    const editDraft = vi.fn(async (...args: [Record<string, unknown>, Record<string, unknown>?]) =>
+      page(args[0]),
+    );
+    const draftPublisher = new GhostPublisher(baseConfig, {
+      ghost: { pages: { read: readDraft, edit: editDraft } },
+    });
+    const input = { id: 'd'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z', markdown: '# New' };
+
+    await expect(draftPublisher.updatePageDraft(input)).rejects.toThrow('body_replacement_confirmed=true');
+    expect(readDraft).not.toHaveBeenCalled();
+    await draftPublisher.updatePageDraft({ ...input, body_replacement_confirmed: true });
+    expect(editDraft.mock.calls[0]?.[0]).toMatchObject({ html: '<h1>New</h1>\n' });
+    expect(editDraft.mock.calls[0]?.[1]).toEqual({ source: 'html' });
+
+    const request = vi.fn();
+    const editPublished = vi.fn(async (...args: [Record<string, unknown>, Record<string, unknown>?]) =>
+      page({ ...args[0], status: 'published' }),
+    );
+    const publishedPublisher = new GhostPublisher(
+      { ...baseConfig, deployHookUrl: 'https://deploy.example.com/hook' },
+      {
+        ghost: {
+          pages: {
+            read: vi.fn(async () => page({ status: 'published' })),
+            edit: editPublished,
+          },
+        },
+        fetch: request,
+      },
+    );
+    await publishedPublisher.updatePublishedPage({
+      id: 'd'.repeat(24),
+      updated_at: '2026-01-01T00:00:00.000Z',
+      meta_description: null,
+      feature_image_url: null,
+    });
+    expect(editPublished.mock.calls[0]?.[0]).not.toHaveProperty('status');
+    expect(editPublished.mock.calls[0]?.[0]).not.toHaveProperty('html');
+    expect(editPublished.mock.calls[0]?.[1]).toEqual({ save_revision: true });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('preflights page batches and deploys exactly once only after complete success', async () => {
+    const request = vi.fn(async () => new Response('', { status: 202 }));
+    const read = vi.fn(async ({ id }) => page({ id }));
+    const edit = vi.fn(async (input) => page(input));
+    const publisher = new GhostPublisher(
+      { ...baseConfig, deployHookUrl: 'https://deploy.example.com/hook' },
+      { ghost: { pages: { read, edit } }, fetch: request },
+    );
+    const targets = [
+      { id: 'd'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' },
+      { id: 'e'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' },
+    ];
+
+    const result = await publisher.transitionPages(targets, 'published');
+
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(edit).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(result.deploy?.accepted).toBe(true);
+
+    const staleEdit = vi.fn();
+    const staleRequest = vi.fn();
+    const stale = new GhostPublisher(
+      { ...baseConfig, deployHookUrl: 'https://deploy.example.com/hook' },
+      {
+        ghost: { pages: { read: vi.fn(async ({ id }) => page({ id, updated_at: 'newer' })), edit: staleEdit } },
+        fetch: staleRequest,
+      },
+    );
+    const rejected = await stale.transitionPages(targets, 'published');
+    expect(rejected.failed).toHaveLength(2);
+    expect(staleEdit).not.toHaveBeenCalled();
+    expect(staleRequest).not.toHaveBeenCalled();
+  });
+
+  it('reports exact partial page writes and skips deployment after the first remote failure', async () => {
+    const request = vi.fn();
+    const edit = vi
+      .fn()
+      .mockResolvedValueOnce(page({ status: 'published' }))
+      .mockRejectedValueOnce(new Error('Ghost unavailable'));
+    const publisher = new GhostPublisher(
+      { ...baseConfig, deployHookUrl: 'https://deploy.example.com/hook' },
+      {
+        ghost: { pages: { read: vi.fn(async ({ id }) => page({ id })), edit } },
+        fetch: request,
+      },
+    );
+    const result = await publisher.transitionPages(
+      [
+        { id: 'd'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' },
+        { id: 'e'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' },
+      ],
+      'published',
+    );
+
+    expect(result.partial_failure).toBe(true);
+    expect(result.succeeded).toHaveLength(1);
+    expect(result.failed).toEqual([{ id: 'e'.repeat(24), error: 'Ghost unavailable' }]);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('checks only server-selected current page URLs and rejects stale pages without fetching', async () => {
+    const html =
+      '<html><head><title>About SEO</title><meta name="description" content="About description"><link rel="canonical" href="https://site.example.com/about"></head><body><h1>About</h1></body></html>';
+    const request = vi.fn(async () => new Response(html, { status: 200 }));
+    const current = page({
+      status: 'published',
+      url: 'https://ghost.example.com/about/',
+      canonical_url: 'https://site.example.com/about',
+      meta_title: 'About SEO',
+      meta_description: 'About description',
+    });
+    const publisher = new GhostPublisher(
+      { ...baseConfig, publicPageUrlTemplate: 'https://site.example.com/{slug}' },
+      { ghost: { pages: { read: vi.fn(async () => current) } }, fetch: request },
+    );
+
+    const checks = await publisher.checkLivePages([
+      { id: current.id, updated_at: current.updated_at },
+    ]);
+
+    expect(request).toHaveBeenCalledWith(
+      'https://site.example.com/about',
+      expect.objectContaining({ redirect: 'error' }),
+    );
+    expect(checks[0]).toMatchObject({
+      verified: true,
+      title_match: true,
+      canonical_url_match: true,
+      meta_title_match: true,
+      meta_description_match: true,
+    });
+
+    const staleRequest = vi.fn();
+    const stale = new GhostPublisher(baseConfig, {
+      ghost: { pages: { read: vi.fn(async () => current) } },
+      fetch: staleRequest,
+    });
+    const staleChecks = await stale.checkLivePages([{ id: current.id, updated_at: 'stale' }]);
+    expect(staleChecks[0]).toMatchObject({ verified: false, error: 'Page changed since it was read' });
+    expect(staleRequest).not.toHaveBeenCalled();
+
+    const ghostHtml =
+      '<html><head><title>About</title><link rel="canonical" href="https://ghost.example.com/about/"></head><body><h1>About</h1></body></html>';
+    const ghostRequest = vi.fn(async () => new Response(ghostHtml, { status: 200 }));
+    const ghostRendered = new GhostPublisher(baseConfig, {
+      ghost: {
+        pages: {
+          read: vi.fn(async () =>
+            page({ status: 'published', meta_title: null, meta_description: null, canonical_url: null }),
+          ),
+        },
+      },
+      fetch: ghostRequest,
+    });
+    const ghostChecks = await ghostRendered.checkLivePages([
+      { id: current.id, updated_at: current.updated_at },
+    ]);
+    expect(ghostRequest).toHaveBeenCalledWith(
+      'https://ghost.example.com/about/',
+      expect.objectContaining({ redirect: 'error' }),
+    );
+    expect(ghostChecks[0]?.verified).toBe(true);
   });
 
   it('allows image files only inside configured roots and blocks symlink escapes', async () => {

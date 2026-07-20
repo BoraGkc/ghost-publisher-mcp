@@ -17,6 +17,8 @@ export type PostRef = {
   authors: AuthorRef[];
 };
 
+export type PageRef = Omit<PostRef, 'tags' | 'authors'> & { created_at?: string };
+
 export type FailedItem = {
   id?: string;
   title?: string;
@@ -30,8 +32,8 @@ export type DeployResult = {
   error?: string;
 };
 
-export type BatchResult = {
-  succeeded: PostRef[];
+export type BatchResult<T = PostRef> = {
+  succeeded: T[];
   failed: FailedItem[];
   partial_failure: boolean;
   deploy?: DeployResult;
@@ -82,3 +84,6 @@ export type PublishedPostPatch = {
   twitter_description?: string | null;
   twitter_image?: string | null;
 };
+
+export type PageInput = Omit<DraftInput, 'tags' | 'authors' | 'featured'>;
+export type PublishedPagePatch = PublishedPostPatch;

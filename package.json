@@ -1,6 +1,6 @@
 {
   "name": "ghost-publisher-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "mcpName": "io.github.BoraGkc/ghost-publisher",
   "description": "Write with your AI. Publish safely to Ghost.",
   "type": "module",

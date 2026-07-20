@@ -6,12 +6,12 @@
     "url": "https://github.com/BoraGkc/ghost-publisher-mcp",
     "source": "github"
   },
-  "version": "0.3.0",
+  "version": "0.4.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "ghost-publisher-mcp",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "transport": {
         "type": "stdio"
       },
@@ -61,6 +61,13 @@
         {
           "name": "GHOST_PUBLIC_POST_URL_TEMPLATE",
           "description": "Optional public post URL containing {slug} for live checks.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "GHOST_PUBLIC_PAGE_URL_TEMPLATE",
+          "description": "Optional public page URL containing {slug} for headless live checks.",
           "isRequired": false,
           "isSecret": false,
           "format": "string"
