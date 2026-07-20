@@ -60,6 +60,12 @@ describe('setup CLI', () => {
     expect(clientConfigPath('claude-desktop', 'darwin', { HOME: '/Users/test' })).toContain(
       'Library/Application Support/Claude/claude_desktop_config.json',
     );
+    expect(
+      clientConfigPath('claude-desktop', 'win32', {
+        USERPROFILE: 'C:\\Users\\test',
+        APPDATA: 'C:\\Users\\test\\AppData\\Roaming',
+      }),
+    ).toBe('C:\\Users\\test\\AppData\\Roaming\\Claude\\claude_desktop_config.json');
     expect(() => clientConfigPath('claude-desktop', 'linux', { HOME: '/home/test' })).toThrow(
       'only on macOS and Windows',
     );

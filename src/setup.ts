@@ -76,12 +76,13 @@ export function clientConfigPath(
   env: NodeJS.ProcessEnv,
 ): string {
   const home = homeDirectory(env);
-  if (client === 'cursor') return path.join(home, '.cursor', 'mcp.json');
+  const platformPath = platform === 'win32' ? path.win32 : path.posix;
+  if (client === 'cursor') return platformPath.join(home, '.cursor', 'mcp.json');
   if (platform === 'darwin') {
-    return path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
+    return platformPath.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
   }
   if (platform === 'win32' && env.APPDATA) {
-    return path.join(env.APPDATA, 'Claude', 'claude_desktop_config.json');
+    return platformPath.join(env.APPDATA, 'Claude', 'claude_desktop_config.json');
   }
   throw new Error('Claude Desktop setup is supported only on macOS and Windows');
 }
