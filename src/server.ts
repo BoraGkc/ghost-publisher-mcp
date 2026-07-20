@@ -74,9 +74,12 @@ const slugSchema = z
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must contain lowercase ASCII words separated by hyphens');
 
 const ghostIdSchema = z.string().regex(/^[a-f\d]{24}$/i, 'Expected a 24-character Ghost ID');
+const authorIdSchema = z
+  .string()
+  .regex(/^(?:[a-f\d]{24}|[1-9]\d{0,19})$/i, 'Expected an author ID returned by Ghost');
 const timestampSchema = z.iso.datetime({ offset: true });
 const authorsSchema = z
-  .array(ghostIdSchema)
+  .array(authorIdSchema)
   .min(1)
   .max(10)
   .refine((authors) => new Set(authors).size === authors.length, 'Author IDs must be unique');
@@ -200,7 +203,7 @@ const listContentSchema = z
     status: z.enum(['draft', 'published', 'scheduled', 'all']).default('all'),
     tag: z.string().min(1).optional(),
     search: z.string().min(1).optional(),
-    author_id: ghostIdSchema.optional(),
+    author_id: authorIdSchema.optional(),
     updated_after: timestampSchema.optional(),
     updated_before: timestampSchema.optional(),
     published_after: timestampSchema.optional(),

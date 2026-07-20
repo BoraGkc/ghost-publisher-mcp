@@ -82,7 +82,7 @@ try {
 
   const authors = await publisher.listAuthors({ limit: 50, page: 1 });
   const owner = authors.authors.find((author) => author.name === 'Integration Owner');
-  assert.match(owner?.id, /^[a-f\d]{24}$/i);
+  assert.match(owner?.id, /^(?:[a-f\d]{24}|[1-9]\d{0,19})$/i);
 
   const slug = `ghost-publisher-integration-${Date.now()}`;
   const batch = await publisher.createDrafts([

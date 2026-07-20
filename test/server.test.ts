@@ -348,6 +348,39 @@ describe('MCP contract', () => {
     await server.close();
   });
 
+  it('accepts exact Ghost 5 legacy author IDs and rejects empty, duplicate, or malformed author arrays', async () => {
+    const add = vi.fn(async (input: Record<string, unknown>) => ({ ...post('draft'), ...input }));
+    const publisher = new GhostPublisher(config, {
+      ghost: {
+        posts: {
+          read: vi.fn(async () => Promise.reject(new Error('404 not found'))),
+          add,
+        },
+      },
+    });
+    const { client, server } = await connect(publisher);
+
+    for (const authors of [[], ['1', '1'], ['not-an-author-id']]) {
+      const rejected = await client.callTool({
+        name: 'create_drafts',
+        arguments: { posts: [{ title: 'Draft', markdown: '# Draft', authors }] },
+      });
+      expect(rejected.isError).toBe(true);
+      expect(JSON.stringify(rejected.content)).toContain('Invalid arguments');
+    }
+    expect(add).not.toHaveBeenCalled();
+
+    const accepted = await client.callTool({
+      name: 'create_drafts',
+      arguments: { posts: [{ title: 'Draft', markdown: '# Draft', authors: ['1'] }] },
+    });
+    expect(accepted.isError).not.toBe(true);
+    expect(add.mock.calls[0]?.[0]).toMatchObject({ authors: [{ id: '1' }] });
+
+    await client.close();
+    await server.close();
+  });
+
   it('returns structured deployment failures without hiding successful transitions', async () => {
     const request = vi.fn(async () => new Response('failed', { status: 503 }));
     const edit = vi.fn(async ({ status }: { status: string }) => post(status as 'draft' | 'published'));
