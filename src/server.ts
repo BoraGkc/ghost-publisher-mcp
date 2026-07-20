@@ -150,7 +150,7 @@ function failure(error: unknown, config: Config) {
 
 export function createServer(publisher: GhostPublisher): McpServer {
   const server = new McpServer(
-    { name: 'ghost-publisher-mcp', version: '0.2.0' },
+    { name: 'ghost-publisher-mcp', version: '0.2.1' },
     {
       instructions:
         'Create drafts first. Before updating, publishing, or unpublishing, read posts and pass exact id and updated_at values. Destructive tools require user_confirmed=true after explicit approval for the exact action. Markdown draft updates replace the complete body and require body_replacement_confirmed=true. Successful publish and unpublish batches deploy exactly once when configured; published metadata updates require one separate approved trigger_deploy call. When the AI client generates an image, save it locally, call upload_image, then attach its URL with create_drafts or update_draft.',

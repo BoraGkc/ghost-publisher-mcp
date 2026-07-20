@@ -5,9 +5,14 @@ import { GhostPublisher } from './publisher.js';
 import { createServer } from './server.js';
 
 try {
-  const publisher = new GhostPublisher(loadConfig());
-  const server = createServer(publisher);
-  await server.connect(new StdioServerTransport());
+  if (process.argv[2] === 'setup') {
+    const { runSetup } = await import('./setup.js');
+    await runSetup(process.argv.slice(3));
+  } else {
+    const publisher = new GhostPublisher(loadConfig());
+    const server = createServer(publisher);
+    await server.connect(new StdioServerTransport());
+  }
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`ghost-publisher-mcp: ${message}`);

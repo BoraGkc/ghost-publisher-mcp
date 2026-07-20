@@ -8,7 +8,7 @@ Ghost Publisher deliberately exposes 12 editorial tools instead of mirroring the
 
 > This project is not affiliated with or endorsed by the Ghost Foundation.
 
-> Release status: npm and the official MCP Registry currently serve `0.1.1`. The repository targets unreleased `0.2.0`; see the [roadmap](ROADMAP.md) before installing from source.
+> Release status: npm and the official MCP Registry currently serve `0.1.1`. The repository contains the `0.2.0` release candidate and later unreleased work; see the [roadmap](ROADMAP.md) before installing from source.
 
 ## Requirements
 
