@@ -6,18 +6,20 @@ This file is the authoritative Now/Next/Later index. Detailed milestone plans ow
 
 | Horizon | Milestone | Status | Plan |
 | --- | --- | --- | --- |
+| Current | v0.4.1 release correction | Corrected npm documentation and published-package MCP smoke coverage | [0.4 Pages](docs/plans/0.4-pages.md) |
 | Shipped | v0.2.0 release hardening and SEO workflow | Included in the consolidated v0.4.0 release | [0.2 release](docs/plans/0.2-release.md), [SEO workflow](docs/plans/0.2-seo-workflow.md) |
 | Shipped | v0.2.1 cross-client onboarding | Included in the consolidated v0.4.0 release | [0.2.1 onboarding](docs/plans/0.2.1-onboarding.md) |
 | Shipped | v0.3.0 editorial core | Included in the consolidated v0.4.0 release | [0.3 editorial](docs/plans/0.3-editorial.md) |
-| Current | v0.4.0 safe Pages vertical | Published and verified on 2026-07-21 | [0.4 Pages](docs/plans/0.4-pages.md) |
+| Shipped | v0.4.0 safe Pages vertical | Published and verified on 2026-07-21 | [0.4 Pages](docs/plans/0.4-pages.md) |
 | Demand-gated | Portable prompts and broader interoperability | No committed release | [Future interoperability](docs/plans/future-interoperability.md) |
 
-The npm package and official MCP Registry serve `0.4.0`. The tag workflow passed Ghost 5/6 integration, package checks, audit, npm provenance publication, Registry publication, and public version verification. A clean installation of the published package also passed the redacted setup dry run.
+The npm package and official MCP Registry serve `0.4.1`. The tag workflow passes Ghost 5/6 integration, package checks, audit, npm provenance publication, Registry publication, and public version verification. The published package also passes initialization, normal/read-only tool discovery, connection checks, and disposable draft creation through a real MCP client.
 
 ## Gap register
 
 | Priority | Gap | Closure | Status |
 | --- | --- | --- | --- |
+| P0 | The immutable v0.4.0 npm README retained prerelease wording | Publish corrected documentation as the next patch rather than overwriting v0.4.0 | Closed in v0.4.1 |
 | P0 | `0.2.0` was not published separately | Ship the completed milestone contracts together in the next immutable release | Closed in v0.4.0 |
 | P0 | Ortak Alan live acceptance cannot run in this task | Connect Ghost Publisher and OpenSEO, prepare one proposal, then obtain exact approval for one patch and one deployment | Blocked on external connections and approval; no live action taken |
 | P0 | Roadmap and implementation branches were unmerged | Merge PR [#8](https://github.com/BoraGkc/ghost-publisher-mcp/pull/8) and PR [#7](https://github.com/BoraGkc/ghost-publisher-mcp/pull/7) | Closed in v0.4.0 |
@@ -35,10 +37,10 @@ The npm package and official MCP Registry serve `0.4.0`. The tag workflow passed
 
 ## Delivery order
 
-1. v0.4.0 consolidated release: complete.
+1. v0.4.0 consolidated release and v0.4.1 documentation correction: complete.
 2. Monitor setup, scheduling, and Pages usage across supported clients.
 3. Run the Ortak Alan SEO workflow only after separate approval for one exact patch and deployment.
-4. Correct release defects with the next patch version; never overwrite v0.4.0.
+4. Correct release defects with the next patch version; never overwrite published versions.
 5. Reassess broader interoperability only from observed usage.
 
 ## Non-goals

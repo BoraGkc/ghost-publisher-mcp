@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 (2026-07-21)
+
+- Correct the npm README so installation guidance and release status match the published package.
+- Record successful initialization, tool discovery, read-only connection, normal connection, and draft-creation smoke tests using the published package against disposable Ghost.
+
 ## 0.4.0 (2026-07-21)
 
 - Add one-command, cross-client setup for Codex, Cursor, and Claude Desktop with exact version pinning, redacted previews, atomic JSON writes, and rollback.

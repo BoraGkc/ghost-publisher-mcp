@@ -12,6 +12,8 @@ import {
 } from '../src/setup.js';
 
 const key = `${'a'.repeat(24)}:${'b'.repeat(64)}`;
+const packageVersion = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string })
+  .version;
 const homes: string[] = [];
 
 afterEach(async () => {
@@ -129,7 +131,7 @@ describe('setup CLI', () => {
     expect(config.theme).toBe('dark');
     expect(config.mcpServers.other).toEqual({ command: 'other' });
     expect(config.mcpServers['ghost-publisher']).toMatchObject({
-      args: ['-y', 'ghost-publisher-mcp@0.4.0'],
+      args: ['-y', `ghost-publisher-mcp@${packageVersion}`],
       env: { GHOST_URL: 'https://example.com', GHOST_ADMIN_API_KEY: key },
     });
     expect(io.text()).not.toContain(key);
@@ -253,7 +255,7 @@ describe('setup CLI', () => {
           status: 0,
           stdout: JSON.stringify({
             command: '/usr/local/bin/npx',
-            args: ['-y', 'ghost-publisher-mcp@0.4.0'],
+            args: ['-y', `ghost-publisher-mcp@${packageVersion}`],
             env: {
               GHOST_URL: 'https://example.com',
               GHOST_ADMIN_API_KEY: saved.includes(key) ? key : 'not-replaced',

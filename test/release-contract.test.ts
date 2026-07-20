@@ -2,6 +2,15 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('release and documentation contracts', () => {
+  it('keeps the packaged README aligned with the package version', async () => {
+    const readme = await readFile('README.md', 'utf8');
+    const packageMetadata = JSON.parse(await readFile('package.json', 'utf8')) as { version: string };
+
+    expect(readme).toContain(`Current release: \`${packageMetadata.version}\``);
+    expect(readme).toContain(`ghost-publisher-mcp@${packageMetadata.version}`);
+    expect(readme).not.toContain('Use the published `0.1.1` release now');
+  });
+
   it('keeps the README publish example on the single automatic deployment path', async () => {
     const readme = await readFile('README.md', 'utf8');
 
