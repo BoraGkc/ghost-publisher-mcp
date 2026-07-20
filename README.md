@@ -20,7 +20,20 @@ Create a custom integration in **Ghost Admin → Settings → Integrations**, th
 
 ## Codex setup
 
-Add this to `~/.codex/config.toml` or a trusted project's `.codex/config.toml`:
+Fastest setup from a private macOS/zsh terminal:
+
+```bash
+read -s "GHOST_KEY?Ghost Admin API key: " && echo
+codex mcp add ghost-publisher --env GHOST_URL=https://your-ghost.example.com --env "GHOST_ADMIN_API_KEY=$GHOST_KEY" -- npx -y ghost-publisher-mcp
+unset GHOST_KEY
+codex mcp list
+```
+
+This installs the current npm release (`0.1.1`). Until `0.2.0` is published, contributors testing the behavior documented on `main` should build the repository and replace the command after `--` with `node /absolute/path/to/ghost-publisher-mcp/dist/index.js`.
+
+Ghost Publisher runs locally so the Ghost Admin key is not entrusted to another hosted service. An OpenSEO-style hosted connection would require a separately threat-modeled credential service and remains on the [future roadmap](docs/plans/future-interoperability.md).
+
+For optional deployment, upload, live-check, and read-only settings, add this full configuration to `~/.codex/config.toml` or a trusted project's `.codex/config.toml`:
 
 ```toml
 [mcp_servers.ghost-publisher]
