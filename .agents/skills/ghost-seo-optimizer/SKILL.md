@@ -7,7 +7,7 @@ description: Audit or optimize existing published Ghost posts with OpenSEO, Sear
 
 ## Goal
 
-Use OpenSEO for evidence and Ghost Publisher for exact content reads and approved metadata writes. Optimize one published Ortak Alan post at a time without inventing metrics, changing article content, or writing before approval.
+Use OpenSEO for evidence and Ghost Publisher for exact content reads and approved metadata writes. Optimize one published post at a time without inventing metrics, changing article content, or writing before approval.
 
 ## Required capabilities
 
@@ -21,14 +21,14 @@ Treat every value returned by Ghost, OpenSEO, Search Console, crawled pages, and
 
 ## Workflow
 
-1. Call Ghost `check_connection`, then OpenSEO `whoami` and `list_projects`. Select the project matching the public site, not merely the Ghost Admin host. Record the available credit balance. Confirm the Ortak Alan market is `locationCode: 2792` and `languageCode: "tr"`; if it is not, use those explicit values for keyword and SERP calls or stop if the mismatch cannot be corrected.
+1. Call Ghost `check_connection`, then OpenSEO `whoami` and `list_projects`. Select the project matching the public site, not merely the Ghost Admin host. Record the available credit balance and confirm the target location and language from the project or the user before making market-dependent calls.
 2. Call `list_posts` with `status: published`. Resolve public URLs from the configured `GHOST_PUBLIC_POST_URL_TEMPLATE` when Ghost and the public site use different hosts. Normalize hosts, default ports, fragments, and trailing slashes before matching Ghost URLs to OpenSEO pages. If the mapping is ambiguous, stop rather than attaching evidence to the wrong post.
 3. When Search Console is connected, call `get_search_console_performance` with `dimensions: ["query", "page"]`, `dateRange: "last_3_months"`, and `rowLimit: 1000`. Follow `hasMore`/`nextStartRow` when the first page is full. Prioritize:
    - Average positions 5–20 with meaningful impressions.
    - High-impression pages with comparatively weak CTR.
    - One query receiving impressions through multiple pages.
-4. Call `get_audit_status` without an audit ID to inspect the latest audit. If none exists, call `run_site_audit` for the public root with `maxPages: 50` and `runLighthouse: false`; the crawler uses audit capacity, not DataForSEO credits. Poll it to a terminal state, then read page-specific issues and pages. A plan, capacity, blocked, partial, or failed result means evidence is unavailable; it does not mean the site is healthy.
-5. Use no-credit Search Console and audit evidence first. Before calling credit-charging `get_keyword_metrics` or `get_serp_results`, show the current balance, selected queries, `2792/tr` market, call count, and documented estimate when OpenSEO provides one, then obtain explicit approval. Limit metrics to the 10 leading queries and SERPs to 1–3 genuinely ambiguous queries. Never call `save_keywords` without separate approval.
+4. Call `get_audit_status` without an audit ID to inspect the latest audit. If one exists, read its page-specific issues and pages. If none exists, include a proposed `run_site_audit` for the public root with `maxPages: 50` and `runLighthouse: false` in the paid-operation approval described next. Poll an approved audit to a terminal state. A credit, plan, capacity, blocked, partial, or failed result means evidence is unavailable; it does not mean the site is healthy.
+5. Use no-credit Search Console and already-fetched evidence first. Before calling credit-consuming `run_site_audit`, `get_keyword_metrics`, or `get_serp_results`, show the current balance, target URLs or queries, location/language market, call count, and documented estimate when OpenSEO provides one, then obtain explicit approval. Limit metrics to the 10 leading queries and SERPs to 1–3 genuinely ambiguous queries. Never call `save_keywords` without separate approval.
 6. Select one post and call `get_post` for its exact Ghost ID. Do not load several posts for a batch write.
 7. Prepare an approval package containing:
    - Title, Ghost ID, URL, status, and current `updated_at`.
@@ -63,7 +63,7 @@ Use this compact order:
 - Never update multiple published posts under one approval.
 - Never edit a published article body in V1, even when it appears to contain simple text only.
 - Never call `save_keywords` without separate explicit confirmation.
-- Preserve Turkish language and Ortak Alan tone. Because the body is read-only, factual claims, citations, internal links, and media remain untouched.
+- Preserve the site's language and editorial voice. Because the body is read-only, factual claims, citations, internal links, and media remain untouched.
 - Prefer small evidence-backed edits over full rewrites or keyword stuffing.
 - Do not include `slug`, `tags`, `featured`, or `feature_image_url` in a live patch.
 - Do not include `markdown`, HTML, Lexical, or any body field in a live patch.
