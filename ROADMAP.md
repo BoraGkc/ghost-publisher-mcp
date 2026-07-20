@@ -28,12 +28,12 @@ The npm package and official MCP Registry serve `0.4.1`. The tag workflow passes
 | P1 | No read-only mode | Validate `GHOST_READ_ONLY`; hide all write tools when enabled | Released in v0.4.0 |
 | P1 | No scheduling or author assignment | Add bounded author and scheduling tools | Released in v0.4.0 |
 | P1 | Setup was client-specific and manual | Add one interactive local installer for Codex, Cursor, and Claude Desktop | Released in v0.4.0 |
-| P1 | Current client releases need ongoing smoke coverage | Exercise current Codex, Cursor, and Claude Desktop releases after client updates | Monitor |
+| P1 | Current client releases need ongoing smoke coverage | Last manual smoke: Codex CLI `0.145.0-alpha.18`, Cursor `3.12.17`, and Claude Desktop `1.22209.3` on 2026-07-21; repeat after client updates | Monitor |
 | P1 | Draft body updates can lose Ghost structure | Require literal body-replacement acknowledgement before any Markdown replacement | Released; native Lexical editing deferred |
 | P2 | Patch semantics were incomplete | Add nullable draft fields and published feature-image replacement | Released in v0.4.0 |
 | P2 | Discovery was narrow | Add bounded author/date/order filters, not arbitrary NQL | Released in v0.4.0 |
 | P2 | Pages required Ghost Admin handoff | Add a separate guarded Pages workflow for Ghost-rendered and headless sites | Released in v0.4.0; monitor usage |
-| P3 | Optimizer workflow is Codex-specific | Add portable MCP prompts while retaining the richer Codex skill | Demand-gated after v0.3 |
+| P3 | Optimizer workflow is Codex-specific | Add portable MCP prompts while retaining the richer Codex skill | Demand-gated after observed v0.4 usage |
 
 ## Delivery order
 
