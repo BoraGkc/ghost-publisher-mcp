@@ -15,6 +15,9 @@ const ADMIN_KEY = /^[a-f\d]{24}:[a-f\d]{64}$/i;
 
 function safeUrl(value: string, name: string): string {
   const url = new URL(value);
+  if (url.username || url.password) {
+    throw new Error(`${name} must not contain credentials`);
+  }
   const local = ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
   if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) {
     throw new Error(`${name} must use HTTPS (HTTP is allowed only for localhost)`);
@@ -44,8 +47,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const templateMarker = 'ghost-publisher-slug-marker';
   const template = (value: string | undefined, name: string) => {
     if (!value) return undefined;
-    if (!value.includes('{slug}')) throw new Error(`${name} must contain {slug}`);
-    return safeUrl(value.replace('{slug}', templateMarker), name).replace(templateMarker, '{slug}');
+    if (value.split('{slug}').length !== 2) throw new Error(`${name} must contain exactly one {slug}`);
+    const parsed = safeUrl(value.replace('{slug}', templateMarker), name);
+    if (!new URL(parsed).pathname.includes(templateMarker)) {
+      throw new Error(`${name} must place {slug} in the URL path`);
+    }
+    return parsed.replace(templateMarker, '{slug}');
   };
   const publicPostUrlTemplate = template(env.GHOST_PUBLIC_POST_URL_TEMPLATE, 'GHOST_PUBLIC_POST_URL_TEMPLATE');
   const publicPageUrlTemplate = template(env.GHOST_PUBLIC_PAGE_URL_TEMPLATE, 'GHOST_PUBLIC_PAGE_URL_TEMPLATE');

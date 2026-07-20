@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+- Add one-command, cross-client setup for Codex, Cursor, and Claude Desktop with exact version pinning, redacted previews, atomic JSON writes, and rollback.
+- Add bounded author and post discovery, complete nullable metadata patches, post scheduling, and unscheduling without newsletter parameters.
+- Add a safe Pages workflow covering draft creation, metadata updates, publishing, unpublishing, and live verification without deletion or scheduling.
+- Harden configured URLs, deployment redirects, Ghost-returned Page URLs, live response sizes, symlinked client configurations, and Codex key handling.
+- Split release packaging from OIDC publication and pin release actions to immutable commits.
+
+## 0.3.0 (unreleased)
+
+- Add public author discovery and ordered author attribution for drafts.
+- Add bounded author/date/order post filters and nullable metadata clearing.
+- Add approval-gated scheduling and unscheduling for exact, version-checked drafts.
+
+## 0.2.1 (unreleased)
+
+- Add the interactive `setup` command and non-interactive client configuration options.
+
 ## 0.2.0 (unreleased)
 
 - Add approval-gated, revision-saving updates for published posts with optimistic locking.
@@ -8,7 +26,7 @@
 - Verify optional rendered meta title, description, and canonical URL in public checks.
 - Add the versioned Ghost + OpenSEO optimizer agent skill and hybrid implementation plan.
 - Require caller-attested literal `user_confirmed: true` for published updates, publish/unpublish batches, and manual deployment.
-- Add strict `GHOST_READ_ONLY` mode, exposing only five read tools.
+- Add strict `GHOST_READ_ONLY` mode.
 - Require `body_replacement_confirmed: true` for complete Markdown draft-body replacement.
 - Make deployment single-attempt, preserve completed post transitions on hook failure, and return structured errors without hook paths or query strings.
 - Publish npm and official MCP Registry metadata from one tag-triggered OIDC workflow after Ghost 5/6 validation.

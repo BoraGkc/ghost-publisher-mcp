@@ -1,8 +1,10 @@
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import {
   access,
   chmod,
+  lstat,
   mkdir,
   readFile,
   rename,
@@ -61,6 +63,16 @@ async function exists(file: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function refuseSymlink(file: string, label: string): Promise<void> {
+  try {
+    if ((await lstat(file)).isSymbolicLink()) {
+      throw new Error(`${label} configuration must not be a symbolic link`);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
 }
 
@@ -229,6 +241,7 @@ async function readJsonState(
   file: string,
   desired: SetupEntry,
 ): Promise<JsonState> {
+  await refuseSymlink(file, client);
   const directoryExisted = await exists(path.dirname(file));
   const existed = await exists(file);
   let original: Buffer | undefined;
@@ -288,9 +301,12 @@ async function atomicJson(state: JsonState, desired: SetupEntry): Promise<void> 
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const servers = plainObject(state.document.mcpServers) ? state.document.mcpServers : {};
   const next = { ...state.document, mcpServers: { ...servers, [SERVER_NAME]: desired } };
-  const temporary = `${state.file}.${process.pid}.tmp`;
+  const temporary = `${state.file}.${randomUUID()}.tmp`;
   try {
-    await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: privateMode(state.mode) });
+    await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, {
+      mode: privateMode(state.mode),
+      flag: 'wx',
+    });
     await rename(temporary, state.file);
     if (process.platform !== 'win32') await chmod(state.file, privateMode(state.mode));
   } catch (error) {
@@ -301,9 +317,9 @@ async function atomicJson(state: JsonState, desired: SetupEntry): Promise<void> 
 
 async function restoreJson(state: JsonState): Promise<void> {
   if (state.existed && state.original) {
-    const temporary = `${state.file}.${process.pid}.restore`;
+    const temporary = `${state.file}.${randomUUID()}.restore`;
     try {
-      await writeFile(temporary, state.original, { mode: privateMode(state.mode) });
+      await writeFile(temporary, state.original, { mode: privateMode(state.mode), flag: 'wx' });
       await rename(temporary, state.file);
       if (process.platform !== 'win32') await chmod(state.file, privateMode(state.mode));
     } finally {
@@ -333,6 +349,24 @@ function addCodex(codex: string, entry: SetupEntry, run: Runner): void {
     ...entry.args,
   ]);
   if (result.status !== 0) throw new Error(`Codex setup failed: ${result.stderr.trim() || 'unknown error'}`);
+}
+
+async function replaceCodexKey(file: string, placeholder: string, key: string, mode?: number): Promise<void> {
+  const current = await readFile(file, 'utf8');
+  if (current.split(placeholder).length !== 2) {
+    throw new Error('Codex configuration did not contain exactly one temporary key placeholder');
+  }
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, current.replace(placeholder, key), {
+      mode: privateMode(mode),
+      flag: 'wx',
+    });
+    await rename(temporary, file);
+    if (process.platform !== 'win32') await chmod(file, privateMode(mode));
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
 }
 
 function safeMessage(error: unknown, key: string): string {
@@ -374,6 +408,9 @@ export async function runSetup(args: string[], dependencies: SetupDependencies =
     const desired = setupEntry(npx, version, config.ghostUrl, key, config.readOnly);
     const codex = clients.includes('codex') ? executable('codex', platform, run) : undefined;
     if (clients.includes('codex') && !codex) throw new Error('Codex CLI is required to configure Codex');
+    const codexHome = env.CODEX_HOME || path.join(homeDirectory(env), '.codex');
+    const codexConfig = path.join(codexHome, 'config.toml');
+    if (codex) await refuseSymlink(codexConfig, 'Codex');
 
     if (!options.skipConnectionCheck) await new GhostPublisher(config).checkConnection();
 
@@ -407,8 +444,6 @@ export async function runSetup(args: string[], dependencies: SetupDependencies =
       }
     }
 
-    const codexHome = env.CODEX_HOME || path.join(homeDirectory(env), '.codex');
-    const codexConfig = path.join(codexHome, 'config.toml');
     const codexExisted = codex ? await exists(codexConfig) : false;
     const codexOriginal = codexExisted ? await readFile(codexConfig) : undefined;
     const codexMode = codexExisted ? (await stat(codexConfig)).mode & 0o777 : undefined;
@@ -426,7 +461,16 @@ export async function runSetup(args: string[], dependencies: SetupDependencies =
           const removed = run(codex, ['mcp', 'remove', SERVER_NAME]);
           if (removed.status !== 0) throw new Error(`Cannot replace Codex entry: ${removed.stderr.trim()}`);
         }
-        addCodex(codex, desired, run);
+        const placeholder = `ghost-publisher-key-${randomUUID()}`;
+        addCodex(
+          codex,
+          {
+            ...desired,
+            env: { ...desired.env, GHOST_ADMIN_API_KEY: placeholder },
+          },
+          run,
+        );
+        await replaceCodexKey(codexConfig, placeholder, key, codexMode);
       }
       for (const state of jsonStates) {
         const readback = await readJsonState(state.client, state.file, desired);
@@ -448,9 +492,9 @@ export async function runSetup(args: string[], dependencies: SetupDependencies =
         if (attemptedCodex) {
           if (codexExisted && codexOriginal) {
             await mkdir(codexHome, { recursive: true, mode: 0o700 });
-            const temporary = `${codexConfig}.${process.pid}.restore`;
+            const temporary = `${codexConfig}.${randomUUID()}.restore`;
             try {
-              await writeFile(temporary, codexOriginal, { mode: privateMode(codexMode) });
+              await writeFile(temporary, codexOriginal, { mode: privateMode(codexMode), flag: 'wx' });
               await rename(temporary, codexConfig);
               if (process.platform !== 'win32') await chmod(codexConfig, privateMode(codexMode));
             } finally {

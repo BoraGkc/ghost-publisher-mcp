@@ -1,4 +1,6 @@
+import { lookup } from 'node:dns/promises';
 import { open, realpath } from 'node:fs/promises';
+import { BlockList, isIP } from 'node:net';
 import path from 'node:path';
 import GhostAdminAPI from '@tryghost/admin-api';
 import { fileTypeFromBuffer } from 'file-type';
@@ -18,12 +20,38 @@ import type {
 } from './types.js';
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_LIVE_RESPONSE_BYTES = 2 * 1024 * 1024;
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif']);
 const markdown = new MarkdownIt({ html: false, linkify: true, typographer: false });
+const privateNetworks = new BlockList();
+for (const [address, prefix] of [
+  ['0.0.0.0', 8],
+  ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
+  ['192.0.0.0', 24],
+  ['192.168.0.0', 16],
+  ['198.18.0.0', 15],
+  ['224.0.0.0', 4],
+] as const) {
+  privateNetworks.addSubnet(address, prefix, 'ipv4');
+}
+for (const [address, prefix] of [
+  ['::', 128],
+  ['::1', 128],
+  ['fc00::', 7],
+  ['fe80::', 10],
+  ['ff00::', 8],
+] as const) {
+  privateNetworks.addSubnet(address, prefix, 'ipv6');
+}
 
 type Dependencies = {
   ghost?: any;
   fetch?: typeof fetch;
+  lookup?: (hostname: string) => Promise<{ address: string }[]>;
 };
 
 type TransitionTarget = { id: string; updated_at: string };
@@ -186,9 +214,55 @@ function safePublicUrl(value: string): string {
   return url.toString();
 }
 
+function hostname(value: string): string {
+  return value.replace(/^\[|\]$/g, '').toLowerCase();
+}
+
+function localHostname(value: string): boolean {
+  const host = hostname(value);
+  return host === 'localhost' || host.endsWith('.localhost') || host === '::1' || host.startsWith('127.');
+}
+
+function privateAddress(value: string): boolean {
+  const address = hostname(value);
+  if (address.startsWith('::ffff:')) return true;
+  const family = isIP(address);
+  return family !== 0 && privateNetworks.check(address, family === 4 ? 'ipv4' : 'ipv6');
+}
+
+async function liveResponseText(response: Response): Promise<string> {
+  const declared = Number(response.headers?.get?.('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_LIVE_RESPONSE_BYTES) {
+    throw new Error('Live response exceeds the 2 MB limit');
+  }
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    const text = await response.text();
+    if (Buffer.byteLength(text) > MAX_LIVE_RESPONSE_BYTES) {
+      throw new Error('Live response exceeds the 2 MB limit');
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > MAX_LIVE_RESPONSE_BYTES) {
+      await reader.cancel();
+      throw new Error('Live response exceeds the 2 MB limit');
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks, bytes).toString('utf8');
+}
+
 export class GhostPublisher {
   private readonly ghost: any;
   private readonly request: typeof fetch;
+  private readonly resolveHost: (hostname: string) => Promise<{ address: string }[]>;
 
   constructor(
     readonly config: Config,
@@ -202,6 +276,25 @@ export class GhostPublisher {
         version: config.ghostApiVersion,
       });
     this.request = dependencies.fetch ?? fetch;
+    this.resolveHost =
+      dependencies.lookup ??
+      ((host) => lookup(host, { all: true, verbatim: true }));
+  }
+
+  private async ghostPageUrl(value: string): Promise<string> {
+    const url = new URL(safePublicUrl(value));
+    const allowLocal = localHostname(new URL(this.config.ghostUrl).hostname);
+    if (allowLocal && localHostname(url.hostname)) return url.toString();
+    if (localHostname(url.hostname) || privateAddress(url.hostname)) {
+      throw new Error('Ghost returned a private or loopback public page URL');
+    }
+    if (!isIP(hostname(url.hostname))) {
+      const addresses = await this.resolveHost(hostname(url.hostname));
+      if (!addresses.length || addresses.some(({ address }) => privateAddress(address))) {
+        throw new Error('Ghost returned a private or loopback public page URL');
+      }
+    }
+    return url.toString();
   }
 
   async checkConnection() {
@@ -691,6 +784,7 @@ export class GhostPublisher {
     try {
       const response = await this.request(url, {
         method: 'POST',
+        redirect: 'error',
         signal: AbortSignal.timeout(30_000),
       });
       return {
@@ -724,7 +818,7 @@ export class GhostPublisher {
             redirect: 'error',
             signal: AbortSignal.timeout(15_000),
           });
-          const body = await response.text();
+          const body = await liveResponseText(response);
           const rendered = renderedMetadata(body);
           const titleMatch = response.ok && decodeHtml(body.replace(/<[^>]+>/g, ' ')).includes(post.title);
           const metaTitleMatch =
@@ -780,12 +874,14 @@ export class GhostPublisher {
             ? this.config.publicPageUrlTemplate.replace('{slug}', encodeURIComponent(String(page.slug)))
             : String(page.url ?? '');
           if (!selectedUrl) throw new Error('Ghost returned no public page URL');
-          const url = safePublicUrl(selectedUrl);
+          const url = this.config.publicPageUrlTemplate
+            ? safePublicUrl(selectedUrl)
+            : await this.ghostPageUrl(selectedUrl);
           const response = await this.request(url, {
             redirect: 'error',
             signal: AbortSignal.timeout(15_000),
           });
-          const body = await response.text();
+          const body = await liveResponseText(response);
           const rendered = renderedMetadata(body);
           const titleMatch = response.ok && decodeHtml(body.replace(/<[^>]+>/g, ' ')).includes(String(page.title));
           const expectedCanonical = String(page.canonical_url ?? url);

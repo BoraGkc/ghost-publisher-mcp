@@ -2,47 +2,70 @@
 
 **Write with your AI. Publish safely to Ghost.**
 
-An unofficial, local-first MCP server for creating Ghost drafts, uploading client-generated images, publishing approved batches, triggering a static-site rebuild, and checking that posts are live.
+An unofficial, local-first MCP server for creating and managing Ghost posts and Pages, scheduling posts, uploading images, publishing approved batches, triggering static-site rebuilds, and verifying rendered content.
 
-Ghost Publisher deliberately exposes 12 editorial tools instead of mirroring the full Ghost Admin API. It has no delete, member, newsletter-send, theme, remote HTTP, OAuth, or built-in AI billing surface.
+Ghost Publisher deliberately exposes 23 bounded editorial tools instead of mirroring the full Ghost Admin API. It has no delete, member, newsletter-send, theme, arbitrary-query, remote HTTP, OAuth, or built-in AI billing surface.
 
 > This project is not affiliated with or endorsed by the Ghost Foundation.
 
-> Release status: npm and the official MCP Registry currently serve `0.1.1`. The repository contains the `0.2.0` release candidate and later unreleased work; see the [roadmap](ROADMAP.md) before installing from source.
+> Release status: npm and the official MCP Registry currently serve `0.1.1`. This repository is prepared as the unreleased `0.4.0` release candidate. The one-command installer and the complete tool list below require `0.4.0`; use the pinned current-release or source instructions until publication is verified.
 
 ## Requirements
 
 - Node.js 22 or newer
 - A Ghost custom integration Admin API key
-- Optional: a deploy hook and public post URL template for headless/static sites
+- Optional: a deploy hook and public post/page URL templates for headless/static sites
 
 Create a custom integration in **Ghost Admin → Settings → Integrations**, then copy its Admin API key.
 
-## Codex setup
+## One-command setup (`0.4.0`)
 
-Fastest setup from a private macOS/zsh terminal:
+After npm reports `0.4.0`, run this in a private terminal:
 
 ```bash
-read -s "GHOST_KEY?Ghost Admin API key: " && echo
-codex mcp add ghost-publisher --env GHOST_URL=https://your-ghost.example.com --env "GHOST_ADMIN_API_KEY=$GHOST_KEY" -- npx -y ghost-publisher-mcp
-unset GHOST_KEY
-codex mcp list
+npx -y ghost-publisher-mcp@latest setup --url https://your-ghost.example.com
 ```
 
-This installs the current npm release (`0.1.1`). Until `0.2.0` is published, contributors testing the behavior documented on `main` should build the repository and replace the command after `--` with `node /absolute/path/to/ghost-publisher-mcp/dist/index.js`.
+The installer prompts once for the Ghost Admin API key without echoing it, detects Codex, Cursor, and Claude Desktop, verifies the Ghost connection without writing content, shows a redacted plan, and asks before changing client configuration. Generated entries pin the exact package version that ran setup, preventing surprise upgrades.
 
-Ghost Publisher runs locally so the Ghost Admin key is not entrusted to another hosted service. An OpenSEO-style hosted connection would require a separately threat-modeled credential service and remains on the [future roadmap](docs/plans/future-interoperability.md).
+For CI or automation, inject the key into an environment variable through the platform's secret manager rather than typing it into the command or passing it as an argument:
 
-For optional deployment, upload, live-check, and read-only settings, add this full configuration to `~/.codex/config.toml` or a trusted project's `.codex/config.toml`:
+```bash
+npx -y ghost-publisher-mcp@0.4.0 setup \
+  --url https://your-ghost.example.com \
+  --client codex \
+  --key-env GHOST_SETUP_KEY \
+  --yes
+unset GHOST_SETUP_KEY
+```
+
+Use `--read-only` for a nine-tool read-only installation. Use `--dry-run` to preview a fully redacted plan. Existing entries are preserved unless `--replace` is supplied. The Admin key is stored in each selected client's local user configuration; setup refuses symlinked configurations.
+
+## Use the published `0.1.1` release now
+
+Until `0.4.0` is published, add this pinned entry directly to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.ghost-publisher]
 command = "npx"
-args = ["-y", "ghost-publisher-mcp"]
-env = { GHOST_URL = "https://your-ghost.example.com", GHOST_ADMIN_API_KEY = "your_id:your_secret", GHOST_READ_ONLY = "false", GHOST_UPLOAD_ROOTS = "/absolute/path/to/blog-assets", GHOST_DEPLOY_HOOK_URL = "https://your-host.example.com/deploy-hook", GHOST_PUBLIC_POST_URL_TEMPLATE = "https://your-site.example.com/posts/{slug}" }
+args = ["-y", "ghost-publisher-mcp@0.1.1"]
+env = { GHOST_URL = "https://your-ghost.example.com", GHOST_ADMIN_API_KEY = "your_id:your_secret" }
 ```
 
-Save the file and restart Codex. The Codex app, CLI, and IDE extension share this MCP configuration.
+Save the file, restart Codex, and ask: `Check my Ghost connection. Do not change anything.` The Codex app, CLI, and IDE extension share this user-level MCP configuration. Version `0.1.1` has the original post workflow; Pages, scheduling, and setup arrive with `0.4.0`.
+
+Ghost Publisher runs locally so the Ghost Admin key is not entrusted to another hosted service. An OpenSEO-style hosted connection would require a separately threat-modeled credential service and remains on the [future roadmap](docs/plans/future-interoperability.md).
+
+For optional deployment, upload, live-check, and read-only settings in `0.4.0`, the equivalent full Codex configuration is:
+
+```toml
+[mcp_servers.ghost-publisher]
+command = "npx"
+args = ["-y", "ghost-publisher-mcp@0.4.0"]
+env = { GHOST_URL = "https://your-ghost.example.com", GHOST_ADMIN_API_KEY = "your_id:your_secret", GHOST_READ_ONLY = "false", GHOST_UPLOAD_ROOTS = "/absolute/path/to/blog-assets", GHOST_DEPLOY_HOOK_URL = "https://your-host.example.com/deploy-hook", GHOST_PUBLIC_POST_URL_TEMPLATE = "https://your-site.example.com/posts/{slug}", GHOST_PUBLIC_PAGE_URL_TEMPLATE = "https://your-site.example.com/{slug}" }
+```
+
+Keep this user-level file private and do not commit it. Setup uses the user-level client locations only; advanced settings remain manual.
 
 ## Claude Desktop, Cursor, and other MCP clients
 
@@ -53,12 +76,13 @@ Add a stdio server to the client's MCP JSON configuration:
   "mcpServers": {
     "ghost-publisher": {
       "command": "npx",
-      "args": ["-y", "ghost-publisher-mcp"],
+      "args": ["-y", "ghost-publisher-mcp@0.4.0"],
       "env": {
         "GHOST_URL": "https://your-ghost.example.com",
         "GHOST_ADMIN_API_KEY": "your_id:your_secret",
         "GHOST_READ_ONLY": "false",
-        "GHOST_UPLOAD_ROOTS": "/absolute/path/to/blog-assets"
+        "GHOST_UPLOAD_ROOTS": "/absolute/path/to/blog-assets",
+        "GHOST_PUBLIC_PAGE_URL_TEMPLATE": "https://your-site.example.com/{slug}"
       }
     }
   }
@@ -71,13 +95,14 @@ Restart the client after changing its MCP configuration.
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `GHOST_URL` | Yes | — | Ghost instance URL; HTTPS required outside localhost. |
+| `GHOST_URL` | Yes | — | Ghost instance URL; HTTPS required outside localhost and embedded credentials rejected. |
 | `GHOST_ADMIN_API_KEY` | Yes | — | Admin key from a Ghost custom integration. |
 | `GHOST_API_VERSION` | No | `v5.0` | Ghost Admin API compatibility version. |
-| `GHOST_READ_ONLY` | No | `false` | Set to exact `true` to register only five read tools. Exact `true`/`false` values are required. |
+| `GHOST_READ_ONLY` | No | `false` | Set to exact `true` to register only nine read tools. Exact `true`/`false` values are required. |
 | `GHOST_UPLOAD_ROOTS` | For local uploads | — | Allowed absolute directories, separated by the OS path delimiter (`:` on macOS/Linux, `;` on Windows). |
-| `GHOST_DEPLOY_HOOK_URL` | No | — | Receives one POST after a fully successful publish/unpublish batch. |
-| `GHOST_PUBLIC_POST_URL_TEMPLATE` | No | — | Public URL containing `{slug}`, used by `check_live_posts`. |
+| `GHOST_DEPLOY_HOOK_URL` | No | — | HTTPS endpoint receiving one non-redirecting POST after a fully successful publish/unpublish batch. |
+| `GHOST_PUBLIC_POST_URL_TEMPLATE` | No | — | Public post URL with exactly one `{slug}` in its path, used by `check_live_posts`. |
+| `GHOST_PUBLIC_PAGE_URL_TEMPLATE` | No | — | Public page URL with exactly one `{slug}` in its path, used by `check_live_pages` for headless sites. |
 
 The server does not read `.env` files itself. Supply variables through the MCP client or the process environment.
 
@@ -89,18 +114,29 @@ The server does not read `.env` files itself. Supply variables through the MCP c
 | `list_posts` | List/search posts and obtain exact IDs plus `updated_at`. |
 | `get_post` | Read one post by ID or slug with content plus complete SEO and social metadata. |
 | `list_tags` | List tags with post counts. |
+| `list_authors` | Search bounded public author identity fields without exposing staff email, roles, permissions, or settings. |
+| `list_pages` | List/search Pages with bounded status, date, order, and pagination fields. |
+| `get_page` | Read one Page by exact ID or slug with content and metadata. |
 | `create_drafts` | Create up to 10 Markdown posts; always draft-only. |
+| `create_page_drafts` | Create up to 10 Markdown Pages; always draft-only. |
 | `update_draft` | Patch one unchanged draft. Markdown is a complete, potentially lossy body replacement and requires `body_replacement_confirmed: true`; metadata-only patches do not. |
+| `update_page_draft` | Patch one unchanged Page draft with the same explicit body-replacement acknowledgement. |
 | `update_published_post` | Update approved metadata on one published post with `user_confirmed: true`, save a Ghost revision, preserve published status, and never replace its body. |
+| `update_published_page` | Update approved metadata on one published Page, save a revision, preserve published status, and never replace its body. |
 | `upload_image` | Upload a validated local image—including one generated by Codex or another AI client—inside configured roots. |
 | `publish_posts` | With `user_confirmed: true`, preflight and publish up to 25 exact drafts without email, then call the configured deployment hook exactly once after complete success. |
 | `unpublish_posts` | With `user_confirmed: true`, preflight and return published posts to draft, then call the configured deployment hook exactly once after complete success. |
+| `schedule_posts` | With confirmation, schedule up to 25 exact drafts for future web publication; never supplies newsletter parameters or runs a local scheduler. |
+| `unschedule_posts` | With confirmation, return up to 25 exact scheduled posts to draft. |
+| `publish_pages` | With confirmation, preflight and publish up to 25 exact Page drafts, then deploy once after complete success. |
+| `unpublish_pages` | With confirmation, return up to 25 published Pages to draft, then deploy once after complete success. |
 | `trigger_deploy` | With `user_confirmed: true`, call the configured deployment hook exactly once. It never retries automatically. |
 | `check_live_posts` | Check public HTTP status and expected title text, optionally compare rendered SEO fields, and return one combined `verified` result. |
+| `check_live_pages` | Re-read exact published Pages and verify server-selected public URLs, titles, canonical URLs, and configured SEO metadata. |
 
 All successful calls return human-readable text and typed `structuredContent`.
 
-With `GHOST_READ_ONLY=true`, write tools are not registered. The server exposes exactly `check_connection`, `list_posts`, `get_post`, `list_tags`, and `check_live_posts`.
+With `GHOST_READ_ONLY=true`, write tools are not registered. The server exposes exactly `check_connection`, `list_posts`, `get_post`, `list_tags`, `list_authors`, `list_pages`, `get_page`, `check_live_posts`, and `check_live_pages`.
 
 ## Image generation
 
@@ -114,7 +150,7 @@ Ghost Publisher can be used beside [OpenSEO](https://github.com/every-app/open-s
 
 For the first Ortak Alan workflow, configure [hosted OpenSEO MCP](https://openseo.so/docs/mcp) separately and connect Google Search Console when available. Search Console is recommended, not required; OpenSEO owns any DataForSEO usage and charges. Confirm that the OpenSEO project uses the public Ortak Alan domain with market `2792/tr`. Site audits use OpenSEO plan capacity rather than DataForSEO credits; keyword metrics and live SERPs consume credits and require separate approval in the optimizer workflow.
 
-The unreleased `0.2.0` package includes the optimizer skill at `.agents/skills/ghost-seo-optimizer`. Release installation instructions will be added only after the tag and published package exist; do not install the workflow from a nonexistent version link.
+The `0.4.0` release candidate includes the optimizer skill at `.agents/skills/ghost-seo-optimizer`. Published installation instructions will be added only after the tag and package verification succeed.
 
 ```text
 Audit my published Ghost posts using OpenSEO. Prioritize query/page opportunities with
@@ -152,23 +188,25 @@ The AI client researches and writes. Ghost Publisher performs the CMS actions an
 - Draft creation cannot publish.
 - Updates, publish, and unpublish operations use Ghost's `updated_at` optimistic lock.
 - Published updates accept metadata fields only, require top-level literal `user_confirmed: true` after approval for one exact post and patch, save a Ghost revision, preserve status, and cannot send a newsletter.
-- The four destructive tools require caller-attested literal confirmation at the schema boundary. This prevents omitted or false approval flags but cannot prove a human saw the proposal.
+- Published metadata updates, scheduling, publishing, unpublishing, and deployment require caller-attested literal confirmation at the schema boundary. This prevents omitted or false approval flags but cannot prove a human saw the proposal.
 - Markdown draft updates are complete body replacements. Ghost converts their HTML to Lexical and may lose rich structure, so both the schema and service require `body_replacement_confirmed: true`.
 - A batch is fully preflighted before its first write. Remote failures can still cause partial completion; exact outcomes are returned and deployment is skipped.
 - Local uploads use `realpath`, remain inside `GHOST_UPLOAD_ROOTS`, reject symlink escapes, SVG, unsupported content, and files over 20 MB.
 - Callers cannot supply arbitrary upload or deploy URLs.
-- Deployment failures perform no automatic retry, return structured status without discarding completed transitions, and set the MCP result as an error.
+- Configured URLs reject embedded credentials. Public URL templates permit exactly one `{slug}` in the path, not the hostname.
+- Ghost-returned Page URLs are rejected when they resolve to private or loopback networks, except explicit localhost development. Live responses are capped at 2 MB.
+- Deployment hooks do not follow redirects. Failures perform no automatic retry, return structured status without discarding completed transitions, and set the MCP result as an error.
+- The setup command never places the Ghost key in Codex process arguments, refuses symlinked client configurations, uses private file modes on POSIX, and rolls back multi-client failures.
 - API keys, JWTs, hook paths/query strings, and generated bytes are never logged or returned.
 
-## Development
+## Run `0.4.0` from source
 
 ```bash
-npm install
+npm ci
 npm run check
-npm pack --dry-run
 ```
 
-Run the local build with an MCP client:
+Then add the local build to your MCP client:
 
 ```json
 {

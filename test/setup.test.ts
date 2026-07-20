@@ -1,5 +1,5 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { lstat, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -203,9 +203,10 @@ describe('setup CLI', () => {
         return { status: 1, stdout: '', stderr: 'MCP server not found' };
       }
       if (command === '/usr/local/bin/codex' && args.slice(0, 3).join(' ') === 'mcp add ghost-publisher') {
+        const temporaryKey = args.find((arg) => arg.startsWith('GHOST_ADMIN_API_KEY='))?.split('=')[1];
         mkdirSync(path.dirname(codexConfig), { recursive: true });
-        writeFileSync(codexConfig, `partial ${key}`);
-        return { status: 1, stdout: '', stderr: `failed after writing ${key}` };
+        writeFileSync(codexConfig, `partial ${temporaryKey}`);
+        return { status: 1, stdout: '', stderr: 'failed after writing temporary key' };
       }
       return { status: 1, stdout: '', stderr: 'unexpected command' };
     };
@@ -229,8 +230,137 @@ describe('setup CLI', () => {
           ...io,
         },
       ),
-    ).rejects.toThrow('Codex setup failed: failed after writing [REDACTED]');
+    ).rejects.toThrow('Codex setup failed: failed after writing temporary key');
     await expect(readFile(codexConfig)).rejects.toThrow();
     expect(io.text()).not.toContain(key);
+  });
+
+  it('keeps the Ghost key out of Codex process arguments', async () => {
+    const directory = await home();
+    const codexConfig = path.join(directory, '.codex', 'config.toml');
+    const io = streams();
+    let added = false;
+    let addArguments: string[] = [];
+    const codexRun = (command: string, args: string[]) => {
+      if (command === 'which') {
+        if (args[0] === 'npx') return { status: 0, stdout: '/usr/local/bin/npx\n', stderr: '' };
+        if (args[0] === 'codex') return { status: 0, stdout: '/usr/local/bin/codex\n', stderr: '' };
+      }
+      if (command === '/usr/local/bin/codex' && args.slice(0, 3).join(' ') === 'mcp get ghost-publisher') {
+        if (!added) return { status: 1, stdout: '', stderr: 'MCP server not found' };
+        const saved = readFileSync(codexConfig, 'utf8');
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            command: '/usr/local/bin/npx',
+            args: ['-y', 'ghost-publisher-mcp@0.4.0'],
+            env: {
+              GHOST_URL: 'https://example.com',
+              GHOST_ADMIN_API_KEY: saved.includes(key) ? key : 'not-replaced',
+            },
+          }),
+          stderr: '',
+        };
+      }
+      if (command === '/usr/local/bin/codex' && args.slice(0, 3).join(' ') === 'mcp add ghost-publisher') {
+        addArguments = args;
+        const temporaryKey = args.find((arg) => arg.startsWith('GHOST_ADMIN_API_KEY='))?.split('=')[1];
+        mkdirSync(path.dirname(codexConfig), { recursive: true });
+        writeFileSync(codexConfig, `GHOST_ADMIN_API_KEY = "${temporaryKey}"\n`, { mode: 0o600 });
+        added = true;
+        return { status: 0, stdout: '', stderr: '' };
+      }
+      return { status: 1, stdout: '', stderr: 'unexpected command' };
+    };
+
+    await runSetup(
+      [
+        '--url',
+        'https://example.com',
+        '--client',
+        'codex',
+        '--key-env',
+        'TEST_GHOST_KEY',
+        '--skip-connection-check',
+        '--yes',
+      ],
+      { env: { HOME: directory, TEST_GHOST_KEY: key }, platform: 'linux', run: codexRun, ...io },
+    );
+
+    expect(addArguments.join(' ')).not.toContain(key);
+    expect(addArguments.join(' ')).toContain('ghost-publisher-key-');
+    expect(await readFile(codexConfig, 'utf8')).toContain(key);
+    expect(await readFile(codexConfig, 'utf8')).not.toContain('ghost-publisher-key-');
+    expect(io.text()).not.toContain(key);
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses symlinked client configurations without changing their targets', async () => {
+    const directory = await home();
+    const target = path.join(directory, 'managed.json');
+    const file = path.join(directory, '.cursor', 'mcp.json');
+    const original = JSON.stringify({ mcpServers: { other: { command: 'other' } } });
+    await writeFile(target, original);
+    await mkdir(path.dirname(file), { recursive: true });
+    await symlink(target, file);
+    const io = streams();
+
+    await expect(
+      runSetup(
+        [
+          '--url',
+          'https://example.com',
+          '--client',
+          'cursor',
+          '--key-env',
+          'TEST_GHOST_KEY',
+          '--skip-connection-check',
+          '--yes',
+        ],
+        { env: { HOME: directory, TEST_GHOST_KEY: key }, platform: 'linux', run, ...io },
+      ),
+    ).rejects.toThrow('configuration must not be a symbolic link');
+    expect((await lstat(file)).isSymbolicLink()).toBe(true);
+    expect(await readFile(target, 'utf8')).toBe(original);
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses a symlinked Codex configuration before invoking Codex', async () => {
+    const directory = await home();
+    const target = path.join(directory, 'managed.toml');
+    const file = path.join(directory, '.codex', 'config.toml');
+    const original = '[mcp_servers.other]\ncommand = "other"\n';
+    await writeFile(target, original);
+    await mkdir(path.dirname(file), { recursive: true });
+    await symlink(target, file);
+    const io = streams();
+    const calls: string[] = [];
+    const codexRun = (command: string, args: string[]) => {
+      calls.push([command, ...args].join(' '));
+      if (command === 'which' && args[0] === 'npx') {
+        return { status: 0, stdout: '/usr/local/bin/npx\n', stderr: '' };
+      }
+      if (command === 'which' && args[0] === 'codex') {
+        return { status: 0, stdout: '/usr/local/bin/codex\n', stderr: '' };
+      }
+      return { status: 1, stdout: '', stderr: 'unexpected command' };
+    };
+
+    await expect(
+      runSetup(
+        [
+          '--url',
+          'https://example.com',
+          '--client',
+          'codex',
+          '--key-env',
+          'TEST_GHOST_KEY',
+          '--skip-connection-check',
+          '--yes',
+        ],
+        { env: { HOME: directory, TEST_GHOST_KEY: key }, platform: 'linux', run: codexRun, ...io },
+      ),
+    ).rejects.toThrow('Codex configuration must not be a symbolic link');
+    expect(calls.some((call) => call.includes('mcp get'))).toBe(false);
+    expect((await lstat(file)).isSymbolicLink()).toBe(true);
+    expect(await readFile(target, 'utf8')).toBe(original);
   });
 });

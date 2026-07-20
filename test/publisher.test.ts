@@ -495,7 +495,10 @@ describe('publishing service', () => {
 
   it('reports a redacted network deployment failure without retrying', async () => {
     const hook = 'https://deploy.example.com/private?token=secret';
-    const request = vi.fn(async () => Promise.reject(new Error(`request to ${hook} failed`)));
+    const request = vi.fn((...args: Parameters<typeof fetch>) => {
+      void args;
+      return Promise.reject(new Error(`request to ${hook} failed`));
+    });
     const publisher = new GhostPublisher({ ...baseConfig, deployHookUrl: hook }, { ghost: {}, fetch: request });
 
     const deploy = await publisher.triggerDeploy();
@@ -507,6 +510,8 @@ describe('publishing service', () => {
       error: 'request to [REDACTED] failed',
     });
     expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls[0]?.[0].toString()).toBe(hook);
+    expect(request.mock.calls[0]?.[1]).toMatchObject({ redirect: 'error' });
   });
 
   it('uses the bounded Ghost Pages surface and always creates page drafts', async () => {
@@ -705,6 +710,7 @@ describe('publishing service', () => {
         },
       },
       fetch: ghostRequest,
+      lookup: async () => [{ address: '93.184.216.34' }],
     });
     const ghostChecks = await ghostRendered.checkLivePages([
       { id: current.id, updated_at: current.updated_at },
@@ -714,6 +720,52 @@ describe('publishing service', () => {
       expect.objectContaining({ redirect: 'error' }),
     );
     expect(ghostChecks[0]?.verified).toBe(true);
+  });
+
+  it('rejects Ghost-returned private page URLs before fetching', async () => {
+    const request = vi.fn();
+    const direct = new GhostPublisher(baseConfig, {
+      ghost: { pages: { read: vi.fn(async () => page({ status: 'published', url: 'https://127.0.0.1/private' })) } },
+      fetch: request,
+    });
+    const directResult = await direct.checkLivePages([
+      { id: 'd'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' },
+    ]);
+    expect(directResult[0]).toMatchObject({ verified: false, error: 'Ghost returned a private or loopback public page URL' });
+
+    const resolved = new GhostPublisher(baseConfig, {
+      ghost: { pages: { read: vi.fn(async () => page({ status: 'published', url: 'https://internal.example/page' })) } },
+      fetch: request,
+      lookup: async () => [{ address: '10.0.0.8' }],
+    });
+    const resolvedResult = await resolved.checkLivePages([
+      { id: 'd'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' },
+    ]);
+    expect(resolvedResult[0]).toMatchObject({ verified: false, error: 'Ghost returned a private or loopback public page URL' });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('caps live-check response bodies', async () => {
+    const oversized = 'x'.repeat(2 * 1024 * 1024 + 1);
+    const postRequest = vi.fn(async () => new Response(oversized, { status: 200 }));
+    const postPublisher = new GhostPublisher(
+      { ...baseConfig, publicPostUrlTemplate: 'https://site.example.com/{slug}' },
+      { ghost: {}, fetch: postRequest },
+    );
+    const postResult = await postPublisher.checkLivePosts([{ slug: 'large', title: 'Large' }]);
+    expect(postResult[0]).toMatchObject({ verified: false, error: 'Live response exceeds the 2 MB limit' });
+
+    const pageRequest = vi.fn(async () =>
+      new Response('', { status: 200, headers: { 'content-length': String(2 * 1024 * 1024 + 1) } }),
+    );
+    const pagePublisher = new GhostPublisher(
+      { ...baseConfig, publicPageUrlTemplate: 'https://site.example.com/{slug}' },
+      { ghost: { pages: { read: vi.fn(async () => page({ status: 'published' })) } }, fetch: pageRequest },
+    );
+    const pageResult = await pagePublisher.checkLivePages([
+      { id: 'd'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' },
+    ]);
+    expect(pageResult[0]).toMatchObject({ verified: false, error: 'Live response exceeds the 2 MB limit' });
   });
 
   it('allows image files only inside configured roots and blocks symlink escapes', async () => {

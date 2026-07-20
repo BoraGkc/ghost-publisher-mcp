@@ -20,4 +20,17 @@ describe('release and documentation contracts', () => {
     expect(workflow).toContain('registry.modelcontextprotocol.io/v0.1/servers/');
     expect(workflow).not.toContain('NPM_TOKEN');
   });
+
+  it('limits release OIDC to the publish job and pins every release action', async () => {
+    const workflow = await readFile('.github/workflows/release.yml', 'utf8');
+
+    expect(workflow.match(/id-token: write/g)).toHaveLength(1);
+    expect(workflow).toContain('publish:\n    needs: package');
+    expect(workflow).toContain('actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803');
+    expect(workflow).toContain('actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38');
+    expect(workflow).toContain('actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f');
+    expect(workflow).toContain('actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53');
+    expect(workflow).not.toMatch(/uses: actions\/(?:checkout|setup-node|upload-artifact|download-artifact)@v\d/);
+    expect(workflow.indexOf('npm run check')).toBeLessThan(workflow.indexOf('id-token: write'));
+  });
 });

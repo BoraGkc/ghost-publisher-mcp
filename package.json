@@ -2,7 +2,7 @@
   "name": "ghost-publisher-mcp",
   "version": "0.4.0",
   "mcpName": "io.github.BoraGkc/ghost-publisher",
-  "description": "Write with your AI. Publish safely to Ghost.",
+  "description": "Local-first MCP server for safe Ghost posts, Pages, scheduling, images, and publishing.",
   "type": "module",
   "bin": {
     "ghost-publisher-mcp": "dist/index.js"
@@ -28,9 +28,14 @@
   "keywords": [
     "ghost",
     "mcp",
+    "model-context-protocol",
     "cms",
     "publishing",
-    "ai"
+    "ai",
+    "ghost-cms",
+    "codex",
+    "claude",
+    "cursor"
   ],
   "license": "MIT",
   "repository": {

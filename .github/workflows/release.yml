@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   ghost:
@@ -16,8 +15,8 @@ jobs:
         image: ['ghost:5-alpine', 'ghost:6-alpine']
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
@@ -36,17 +35,16 @@ jobs:
           GHOST_IMAGE: ${{ matrix.image }}
         run: docker compose -f test/docker-compose.yml logs ghost && docker compose -f test/docker-compose.yml down -v
 
-  npm:
+  package:
     needs: ghost
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
+          cache: npm
       - run: npm ci
-      - run: npm install --global npm@11.5.1
       - run: npm run check
       - run: npm audit --audit-level=high
       - run: npm pack --dry-run
@@ -54,8 +52,39 @@ jobs:
         run: |
           node -e "const p=require('./package.json'),s=require('./server.json'); if(p.mcpName!==s.name||p.version!==s.version||p.name!==s.packages[0].identifier||p.version!==s.packages[0].version) throw new Error('package.json and server.json must match')"
           test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
+      - run: npm pack
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: npm-package
+          path: ghost-publisher-mcp-*.tgz
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: npm-package
+      - run: npm install --global npm@11.5.1 --ignore-scripts
+      - name: Verify packaged release
+        run: |
+          package_file="$(find . -maxdepth 1 -name 'ghost-publisher-mcp-*.tgz' -print -quit)"
+          test -n "$package_file"
+          test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
+          tar --extract --to-stdout --gzip --file "$package_file" package/package.json | \
+            node -e "const p=JSON.parse(require('fs').readFileSync(0,'utf8'));if(p.version!==require('./package.json').version)process.exit(1)"
       - name: Publish npm package with provenance
-        run: npm publish --provenance --access public
+        run: npm publish ./ghost-publisher-mcp-*.tgz --provenance --access public
       - name: Wait for npm availability
         run: |
           release_version="$(node -p "require('./package.json').version")"

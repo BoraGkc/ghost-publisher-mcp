@@ -37,7 +37,7 @@ describe('configuration boundary', () => {
         GHOST_ADMIN_API_KEY: key,
         GHOST_PUBLIC_POST_URL_TEMPLATE: 'https://example.com/posts',
       }),
-    ).toThrow('must contain {slug}');
+    ).toThrow('must contain exactly one {slug}');
     expect(() =>
       loadConfig({
         GHOST_URL: 'https://example.com',
@@ -45,6 +45,33 @@ describe('configuration boundary', () => {
         GHOST_PUBLIC_PAGE_URL_TEMPLATE: 'http://remote.example.com/{slug}',
       }),
     ).toThrow('must use HTTPS');
+    expect(() =>
+      loadConfig({
+        GHOST_URL: 'https://user:password@example.com',
+        GHOST_ADMIN_API_KEY: key,
+      }),
+    ).toThrow('must not contain credentials');
+    expect(() =>
+      loadConfig({
+        GHOST_URL: 'https://example.com',
+        GHOST_ADMIN_API_KEY: key,
+        GHOST_DEPLOY_HOOK_URL: 'https://token@deploy.example.com/hook',
+      }),
+    ).toThrow('must not contain credentials');
+    expect(() =>
+      loadConfig({
+        GHOST_URL: 'https://example.com',
+        GHOST_ADMIN_API_KEY: key,
+        GHOST_PUBLIC_POST_URL_TEMPLATE: 'https://{slug}',
+      }),
+    ).toThrow('must place {slug} in the URL path');
+    expect(() =>
+      loadConfig({
+        GHOST_URL: 'https://example.com',
+        GHOST_ADMIN_API_KEY: key,
+        GHOST_PUBLIC_POST_URL_TEMPLATE: 'https://example.com/{slug}/{slug}',
+      }),
+    ).toThrow('must contain exactly one {slug}');
     expect(() =>
       loadConfig({ GHOST_URL: 'https://example.com', GHOST_ADMIN_API_KEY: key, GHOST_READ_ONLY: 'yes' }),
     ).toThrow('GHOST_READ_ONLY must be true or false');
