@@ -7,12 +7,12 @@ This file is the authoritative Now/Next/Later index. Detailed milestone plans ow
 | Horizon | Milestone | Status | Plan |
 | --- | --- | --- | --- |
 | Now | v0.2.0 release hardening and SEO workflow | Local implementation complete; external gates and release pending | [0.2 release](docs/plans/0.2-release.md), [SEO workflow](docs/plans/0.2-seo-workflow.md) |
-| Next | v0.2.1 cross-client onboarding | Planned; starts after v0.2 publication | [0.2.1 onboarding](docs/plans/0.2.1-onboarding.md) |
-| Planned | v0.3.0 editorial core | Planned; starts after onboarding acceptance | [0.3 editorial](docs/plans/0.3-editorial.md) |
-| Later | v0.4.0 safe Pages vertical | Planned; starts after v0.3 usage review | [0.4 Pages](docs/plans/0.4-pages.md) |
+| Next | v0.2.1 cross-client onboarding | Implemented and CI-verified; publication follows v0.2.0 | [0.2.1 onboarding](docs/plans/0.2.1-onboarding.md) |
+| Planned | v0.3.0 editorial core | Implemented and Ghost 5/6 verified; publication follows onboarding acceptance | [0.3 editorial](docs/plans/0.3-editorial.md) |
+| Later | v0.4.0 safe Pages vertical | Implemented and Ghost 5/6 verified; usage review and publication pending | [0.4 Pages](docs/plans/0.4-pages.md) |
 | Demand-gated | Portable prompts and broader interoperability | No committed release | [Future interoperability](docs/plans/future-interoperability.md) |
 
-The npm package and official MCP Registry currently remain on `0.1.1`. The repository declares `0.2.0`, but that version is not considered released until the tag-triggered release workflow and clean-install smoke test pass.
+The npm package and official MCP Registry currently remain on `0.1.1`. The milestone commits declare their intended versions through `0.4.0`, but none is considered released until its tag-triggered release workflow and clean-install smoke test pass.
 
 ## Gap register
 
@@ -22,12 +22,12 @@ The npm package and official MCP Registry currently remain on `0.1.1`. The repos
 | P0 | Deployment behavior contradicts documentation | Publish/unpublish deploy once after complete success; published metadata updates deploy only through a separate approved call; never retry writes | Implemented locally; release pending |
 | P1 | Approval is instructions-only | Require caller-attested literal `user_confirmed: true` for four destructive tools | Implemented locally; release pending |
 | P1 | No read-only mode | Validate `GHOST_READ_ONLY`; hide all write tools when enabled | Implemented locally; release pending |
-| P1 | No scheduling or author assignment | Add bounded author and scheduling tools after v0.2 | Planned for v0.3 |
-| P1 | Setup is client-specific and manual | Add one interactive local installer for Codex, Cursor, and Claude Desktop | Planned for v0.2.1 |
+| P1 | No scheduling or author assignment | Add bounded author and scheduling tools after v0.2 | Implemented and integration-verified; release pending |
+| P1 | Setup is client-specific and manual | Add one interactive local installer for Codex, Cursor, and Claude Desktop | Implemented and cross-platform CI-verified; release pending |
 | P1 | Draft body updates can lose Ghost structure | Require literal body-replacement acknowledgement before any Markdown replacement | Implemented locally; native Lexical editing deferred |
-| P2 | Patch semantics are incomplete | Add nullable draft fields and published feature-image replacement | Planned for v0.3 |
-| P2 | Discovery is narrow | Add bounded author/date/order filters, not arbitrary NQL | Planned for v0.3 |
-| P2 | Pages require Ghost Admin handoff | Add a separate guarded Pages workflow for Ghost-rendered and headless sites | Planned for v0.4 |
+| P2 | Patch semantics are incomplete | Add nullable draft fields and published feature-image replacement | Implemented and integration-verified; release pending |
+| P2 | Discovery is narrow | Add bounded author/date/order filters, not arbitrary NQL | Implemented and integration-verified; release pending |
+| P2 | Pages require Ghost Admin handoff | Add a separate guarded Pages workflow for Ghost-rendered and headless sites | Implemented and integration-verified; usage review and release pending |
 | P3 | Optimizer workflow is Codex-specific | Add portable MCP prompts while retaining the richer Codex skill | Demand-gated after v0.3 |
 
 ## Delivery order
