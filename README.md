@@ -135,7 +135,7 @@ The AI client orchestrates those two capabilities because an MCP server cannot i
 
 Ghost Publisher can be used beside [OpenSEO](https://github.com/every-app/open-seo): OpenSEO supplies Search Console, site-audit, keyword, and SERP evidence; Ghost Publisher supplies the exact Ghost content and approval-gated write. The host agent coordinates them, so neither server stores the other's credentials or calls the other directly.
 
-For the first Ortak Alan workflow, configure [hosted OpenSEO MCP](https://openseo.so/docs/mcp) separately and connect Google Search Console when available. Search Console is recommended, not required; OpenSEO owns any DataForSEO usage and charges. Confirm that the OpenSEO project uses the public Ortak Alan domain with market `2792/tr`. Site audits use OpenSEO plan capacity rather than DataForSEO credits; keyword metrics and live SERPs consume credits and require separate approval in the optimizer workflow.
+Configure [hosted OpenSEO MCP](https://openseo.so/docs/mcp) as a separate server, then select the project matching the site's public domain and target market. Google Search Console is optional; its OpenSEO tools are read-only and [do not use credits](https://openseo.so/features/mcp). Hosted OpenSEO [charges usage credits](https://openseo.so/pricing) for DataForSEO-backed work, including site audits, so the optimizer asks for approval before starting any credit-consuming operation. Ghost Publisher never receives OpenSEO credentials or billing data.
 
 The npm package includes the optimizer skill at `.agents/skills/ghost-seo-optimizer`.
 

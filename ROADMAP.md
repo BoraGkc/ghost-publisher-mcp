@@ -21,7 +21,6 @@ The npm package and official MCP Registry serve `0.4.1`. The tag workflow passes
 | --- | --- | --- | --- |
 | P0 | The immutable v0.4.0 npm README retained prerelease wording | Publish corrected documentation as the next patch rather than overwriting v0.4.0 | Closed in v0.4.1 |
 | P0 | `0.2.0` was not published separately | Ship the completed milestone contracts together in the next immutable release | Closed in v0.4.0 |
-| P0 | Ortak Alan live acceptance cannot run in this task | Connect Ghost Publisher and OpenSEO, prepare one proposal, then obtain exact approval for one patch and one deployment | Blocked on external connections and approval; no live action taken |
 | P0 | Roadmap and implementation branches were unmerged | Merge PR [#8](https://github.com/BoraGkc/ghost-publisher-mcp/pull/8) and PR [#7](https://github.com/BoraGkc/ghost-publisher-mcp/pull/7) | Closed in v0.4.0 |
 | P0 | Deployment behavior contradicted documentation | Publish/unpublish deploy once after complete success; published metadata updates deploy only through a separate approved call; never retry writes | Released in v0.4.0 |
 | P1 | Approval was instructions-only | Require caller-attested literal confirmation at the schema boundary | Released in v0.4.0 |
@@ -39,9 +38,8 @@ The npm package and official MCP Registry serve `0.4.1`. The tag workflow passes
 
 1. v0.4.0 consolidated release and v0.4.1 documentation correction: complete.
 2. Monitor setup, scheduling, and Pages usage across supported clients.
-3. Run the Ortak Alan SEO workflow only after separate approval for one exact patch and deployment.
-4. Correct release defects with the next patch version; never overwrite published versions.
-5. Reassess broader interoperability only from observed usage.
+3. Correct release defects with the next patch version; never overwrite published versions.
+4. Reassess broader interoperability only from observed usage.
 
 ## Non-goals
 
