@@ -20,7 +20,7 @@ The npm package and official MCP Registry currently remain on `0.1.1`. A user ru
 | --- | --- | --- | --- |
 | P0 | `0.2.0` is unreleased | Run Ghost 5/6 and local gates, tag once, publish npm with provenance, publish Registry metadata, then verify both | Open |
 | P0 | Ortak Alan live acceptance cannot run in this task | Connect Ghost Publisher and OpenSEO, prepare one proposal, then obtain exact approval for one patch and one deployment | Blocked on external connections and approval; no live action taken |
-| P0 | Roadmap implementation is not merged | Review and merge the implementation pull request without changing release claims | Open |
+| P0 | Roadmap implementation is not merged | Review and merge draft PR [#7](https://github.com/BoraGkc/ghost-publisher-mcp/pull/7) without changing release claims | In review |
 | P0 | Deployment behavior contradicts documentation | Publish/unpublish deploy once after complete success; published metadata updates deploy only through a separate approved call; never retry writes | Implemented locally; release pending |
 | P1 | Approval is instructions-only | Require caller-attested literal `user_confirmed: true` for four destructive tools | Implemented locally; release pending |
 | P1 | No read-only mode | Validate `GHOST_READ_ONLY`; hide all write tools when enabled | Implemented locally; release pending |
