@@ -7,8 +7,10 @@ This file is the authoritative Now/Next/Later index. Detailed milestone plans ow
 | Horizon | Milestone | Status | Plan |
 | --- | --- | --- | --- |
 | Now | v0.2.0 release hardening and SEO workflow | Local implementation complete; external gates and release pending | [0.2 release](docs/plans/0.2-release.md), [SEO workflow](docs/plans/0.2-seo-workflow.md) |
-| Next | v0.3.0 editorial core | Planned; starts after v0.2 acceptance | [0.3 editorial](docs/plans/0.3-editorial.md) |
-| Later | Cross-client discovery and prompts | Demand-gated | [Future interoperability](docs/plans/future-interoperability.md) |
+| Next | v0.2.1 cross-client onboarding | Planned; starts after v0.2 publication | [0.2.1 onboarding](docs/plans/0.2.1-onboarding.md) |
+| Planned | v0.3.0 editorial core | Planned; starts after onboarding acceptance | [0.3 editorial](docs/plans/0.3-editorial.md) |
+| Later | v0.4.0 safe Pages vertical | Planned; starts after v0.3 usage review | [0.4 Pages](docs/plans/0.4-pages.md) |
+| Demand-gated | Portable prompts and broader interoperability | No committed release | [Future interoperability](docs/plans/future-interoperability.md) |
 
 The npm package and official MCP Registry currently remain on `0.1.1`. The repository declares `0.2.0`, but that version is not considered released until the tag-triggered release workflow and clean-install smoke test pass.
 
@@ -21,9 +23,11 @@ The npm package and official MCP Registry currently remain on `0.1.1`. The repos
 | P1 | Approval is instructions-only | Require caller-attested literal `user_confirmed: true` for four destructive tools | Implemented locally; release pending |
 | P1 | No read-only mode | Validate `GHOST_READ_ONLY`; hide all write tools when enabled | Implemented locally; release pending |
 | P1 | No scheduling or author assignment | Add bounded author and scheduling tools after v0.2 | Planned for v0.3 |
+| P1 | Setup is client-specific and manual | Add one interactive local installer for Codex, Cursor, and Claude Desktop | Planned for v0.2.1 |
 | P1 | Draft body updates can lose Ghost structure | Require literal body-replacement acknowledgement before any Markdown replacement | Implemented locally; native Lexical editing deferred |
 | P2 | Patch semantics are incomplete | Add nullable draft fields and published feature-image replacement | Planned for v0.3 |
-| P2 | Discovery is narrow | Add bounded author/date/order filters, not arbitrary NQL | Demand-gated after v0.3 |
+| P2 | Discovery is narrow | Add bounded author/date/order filters, not arbitrary NQL | Planned for v0.3 |
+| P2 | Pages require Ghost Admin handoff | Add a separate guarded Pages workflow for Ghost-rendered and headless sites | Planned for v0.4 |
 | P3 | Optimizer workflow is Codex-specific | Add portable MCP prompts while retaining the richer Codex skill | Demand-gated after v0.3 |
 
 ## Delivery order
@@ -32,12 +36,16 @@ The npm package and official MCP Registry currently remain on `0.1.1`. The repos
 2. Complete v0.2 confirmation, read-only, body-replacement, and deployment contracts.
 3. Complete v0.2 tests, release automation, and documentation synchronization.
 4. Run all release gates, perform separately approved live acceptance, tag `v0.2.0`, and verify npm plus Registry publication.
-5. Implement v0.3 author and patch semantics.
-6. Implement v0.3 scheduling and validate against disposable Ghost 5 and 6.
-7. Reassess interoperability only from observed v0.3 usage.
+5. Ship v0.2.1 onboarding without changing the MCP tool surface.
+6. Implement v0.3 author, bounded discovery, patch, and scheduling semantics.
+7. Validate v0.3 against disposable Ghost 5 and 6, then review observed usage.
+8. Implement the v0.4 Pages vertical and validate it against Ghost 5 and 6.
+9. Reassess broader interoperability only from observed usage.
 
 ## Non-goals
 
-Pages, post/tag deletion, members, tiers, offers, newsletters, newsletter sending, themes, webhooks, users, roles, site administration, remote HTTP transport, OAuth, raw Lexical editing, server-issued approval tokens, persistent approval state, automatic deployment retries, background scheduling, full-body local search, databases, dashboards, billing, and embedded AI providers are out of scope.
+Post/page deletion, tag administration, page scheduling, members, tiers, offers, newsletters, newsletter sending, themes, webhook modification, users, roles, site administration, remote HTTP transport, OAuth, raw Lexical editing, server-issued approval tokens, persistent approval state, automatic deployment retries, background scheduling, arbitrary NQL, full-body local search, databases, dashboards, telemetry, billing, and embedded AI providers are out of scope.
 
-They require separate demand evidence and threat review. Pages need a real static-page workflow; remote transport needs a hosted-user requirement and threat model; membership/newsletters require a separate permission-scoped product surface; Lexical editing requires round-trip card fixtures and tested rollback.
+They require separate demand evidence and threat review. Remote transport needs a hosted-user requirement and threat model; membership/newsletters require a separate permission-scoped product surface; Lexical editing requires round-trip card fixtures and tested rollback.
+
+MFYDev/ghost-mcp may be inspected only as a development reference against disposable Ghost. It is not a dependency, fork base, proxy, or production companion. Every adopted behavior must be independently bounded, verified against official Ghost documentation, and covered on Ghost 5 and 6.

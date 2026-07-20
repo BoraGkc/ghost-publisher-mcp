@@ -184,7 +184,7 @@ Run the local build with an MCP client:
 
 Unit tests mock Ghost and never invoke an image-generation provider. The opt-in integration workflow uses disposable Ghost 5 and Ghost 6 containers, never the configured live site.
 
-See [ROADMAP.md](ROADMAP.md) for status, [the v0.2 release contract](docs/plans/0.2-release.md), [v0.3 editorial planning](docs/plans/0.3-editorial.md), and [future interoperability](docs/plans/future-interoperability.md).
+See [ROADMAP.md](ROADMAP.md) for status, [the v0.2 release contract](docs/plans/0.2-release.md), [v0.2.1 onboarding](docs/plans/0.2.1-onboarding.md), [v0.3 editorial planning](docs/plans/0.3-editorial.md), [v0.4 Pages planning](docs/plans/0.4-pages.md), and [future interoperability](docs/plans/future-interoperability.md).
 
 ## License
 

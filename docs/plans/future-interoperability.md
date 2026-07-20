@@ -2,12 +2,6 @@
 
 Status: demand-gated after v0.3 usage.
 
-## Structured discovery
-
-Extend `list_posts` with bounded fields for author ID, updated and published date boundaries, and an explicit order enum. Retain status, tag, title search, page, and limit. Do not expose arbitrary Ghost NQL and do not download an entire publication for local full-body scanning.
-
-Revisit body search only after a real workflow demonstrates need and defines strict pagination, payload, and latency limits.
-
 ## Portable MCP prompts
 
 Add two prompts for clients that support MCP prompts:
@@ -21,9 +15,11 @@ Retain the richer Codex optimizer skill. Do not add duplicate MCP resources whil
 
 ## Demand triggers
 
-- Add pages only for a demonstrated static-page editorial workflow.
 - Add remote transport only for a hosted-user requirement backed by a threat model.
 - Add membership or newsletters only as a separate permission-scoped surface.
 - Add Lexical editing only after round-trip fixtures prove cards survive and rollback is tested.
+- Revisit body search only after a real workflow defines strict pagination, payload, and latency limits.
 
-Deletion, site administration, webhooks, themes, users, roles, persistent approval state, automatic deployment retries, background scheduling, databases, dashboards, billing, and embedded AI providers remain outside this milestone.
+Deletion, tag administration, page scheduling, site administration, webhook modification, themes, users, roles, persistent approval state, automatic deployment retries, background scheduling, arbitrary NQL, databases, dashboards, telemetry, billing, and embedded AI providers remain outside this milestone.
+
+MFYDev/ghost-mcp may be used only as a behavioral reference with disposable Ghost. It is never a runtime dependency or production companion, and every adopted idea must be independently verified against official Ghost documentation and Ghost 5/6.
