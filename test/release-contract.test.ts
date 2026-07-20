@@ -42,4 +42,14 @@ describe('release and documentation contracts', () => {
     expect(workflow).not.toMatch(/uses: actions\/(?:checkout|setup-node|upload-artifact|download-artifact)@v\d/);
     expect(workflow.indexOf('npm run check')).toBeLessThan(workflow.indexOf('id-token: write'));
   });
+
+  it('pins third-party actions in non-release workflows', async () => {
+    for (const path of ['.github/workflows/ci.yml', '.github/workflows/ghost-integration.yml']) {
+      const workflow = await readFile(path, 'utf8');
+
+      expect(workflow).toContain('actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803');
+      expect(workflow).toContain('actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38');
+      expect(workflow).not.toMatch(/uses: actions\/(?:checkout|setup-node)@v\d/);
+    }
+  });
 });

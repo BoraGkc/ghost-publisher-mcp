@@ -1,6 +1,6 @@
 # Future Interoperability Plan
 
-Status: demand-gated after v0.3 usage.
+Status: demand-gated after observed v0.4 usage.
 
 ## Portable MCP prompts
 
