@@ -32,6 +32,83 @@ function post(overrides: Record<string, unknown> = {}) {
 }
 
 describe('publishing service', () => {
+  it('uses only bounded discovery filters and returns ordered public authors', async () => {
+    const rows = Object.assign(
+      [
+        post({
+          authors: [{ id: 'c'.repeat(24), name: 'Author', slug: 'author', email: 'private@example.com' }],
+        }),
+      ],
+      { meta: { pagination: { page: 1 } } },
+    );
+    const browse = vi.fn(async () => rows);
+    const publisher = new GhostPublisher(baseConfig, { ghost: { posts: { browse } } });
+
+    const result = await publisher.listPosts({
+      status: 'published',
+      tag: 'News',
+      search: "Editor's pick",
+      author_id: 'c'.repeat(24),
+      updated_after: '2026-01-01T00:00:00.000Z',
+      updated_before: '2026-02-01T00:00:00.000Z',
+      published_after: '2025-01-01T00:00:00.000Z',
+      published_before: '2025-12-31T00:00:00.000Z',
+      order: 'published_at_asc',
+      limit: 15,
+      page: 1,
+    });
+
+    expect(browse).toHaveBeenCalledWith({
+      limit: 15,
+      page: 1,
+      order: 'published_at asc',
+      include: 'tags,authors',
+      filter:
+        "status:published+tag:news+title:~'Editor\\'s pick'+authors.id:cccccccccccccccccccccccc+updated_at:>'2026-01-01T00:00:00.000Z'+updated_at:<'2026-02-01T00:00:00.000Z'+published_at:>'2025-01-01T00:00:00.000Z'+published_at:<'2025-12-31T00:00:00.000Z'",
+    });
+    expect(result.posts[0]?.authors).toEqual([{ id: 'c'.repeat(24), name: 'Author', slug: 'author' }]);
+    expect(result.posts[0]?.authors[0]).not.toHaveProperty('email');
+  });
+
+  it('returns only bounded public author fields', async () => {
+    const rows = Object.assign(
+      [
+        {
+          id: 'c'.repeat(24),
+          name: 'Author',
+          slug: 'author',
+          url: 'https://ghost.example.com/author/author',
+          email: 'private@example.com',
+          roles: [{ name: 'Administrator' }],
+          count: { posts: 4 },
+        },
+      ],
+      { meta: {} },
+    );
+    const browse = vi.fn(async () => rows);
+    const publisher = new GhostPublisher(baseConfig, { ghost: { users: { browse } } });
+
+    const result = await publisher.listAuthors({ search: 'Auth', limit: 50, page: 1 });
+
+    expect(result.authors).toEqual([
+      {
+        id: 'c'.repeat(24),
+        name: 'Author',
+        slug: 'author',
+        url: 'https://ghost.example.com/author/author',
+        count: 4,
+      },
+    ]);
+    expect(JSON.stringify(result)).not.toContain('private@example.com');
+    expect(browse).toHaveBeenCalledWith({
+      limit: 50,
+      page: 1,
+      order: 'name asc',
+      include: 'count.posts',
+      filter: "name:~'Auth'",
+    });
+  });
+
   it('creates safe HTML drafts and transliterates Turkish slugs', async () => {
     const add = vi.fn(async (data) => post(data));
     const ghost = {
@@ -80,6 +157,31 @@ describe('publishing service', () => {
     expect(edit.mock.calls[0]?.[0]).toMatchObject({ custom_excerpt: 'Metadata only' });
   });
 
+  it('preserves ordered author IDs and clears nullable draft metadata and tags', async () => {
+    const edit = vi.fn(async (data) => post(data));
+    const publisher = new GhostPublisher(baseConfig, {
+      ghost: { posts: { read: vi.fn(async () => post()), edit } },
+    });
+
+    await publisher.updateDraft({
+      id: 'a'.repeat(24),
+      updated_at: '2026-01-01T00:00:00.000Z',
+      authors: ['b'.repeat(24), 'c'.repeat(24)],
+      tags: [],
+      excerpt: null,
+      feature_image_url: null,
+      meta_description: null,
+    });
+
+    expect(edit.mock.calls[0]?.[0]).toMatchObject({
+      authors: [{ id: 'b'.repeat(24) }, { id: 'c'.repeat(24) }],
+      tags: [],
+      custom_excerpt: null,
+      feature_image: null,
+      meta_description: null,
+    });
+  });
+
   it('aborts a whole transition when preflight finds a stale post', async () => {
     const edit = vi.fn();
     const ghost = {
@@ -125,12 +227,14 @@ describe('publishing service', () => {
       id: 'a'.repeat(24),
       updated_at: '2026-01-01T00:00:00.000Z',
       meta_description: null,
+      feature_image_url: null,
     });
 
     expect(updated.status).toBe('published');
     expect(edit.mock.calls[0]?.[0]).not.toHaveProperty('status');
     expect(edit.mock.calls[0]?.[0]).not.toHaveProperty('html');
     expect(edit.mock.calls[0]?.[0]).toMatchObject({ meta_description: null });
+    expect(edit.mock.calls[0]?.[0]).toMatchObject({ feature_image: null });
     expect(edit.mock.calls[0]?.[1]).toEqual({ save_revision: true });
     expect(request).not.toHaveBeenCalled();
   });
@@ -243,6 +347,53 @@ describe('publishing service', () => {
     expect(result.succeeded).toHaveLength(1);
     expect(result.failed).toHaveLength(1);
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it('schedules and unschedules exact posts without newsletters or deployment', async () => {
+    const request = vi.fn();
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce(post({ status: 'draft' }))
+      .mockResolvedValueOnce(post({ status: 'scheduled' }));
+    const edit = vi
+      .fn()
+      .mockImplementationOnce(async (data) => post({ ...data, status: 'scheduled' }))
+      .mockImplementationOnce(async (data) => post({ ...data, status: 'draft' }));
+    const publisher = new GhostPublisher(
+      { ...baseConfig, deployHookUrl: 'https://deploy.example.com/hook' },
+      { ghost: { posts: { read, edit } }, fetch: request },
+    );
+    const target = { id: 'a'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' };
+
+    const scheduled = await publisher.schedulePosts([
+      { ...target, published_at: '2099-01-01T00:00:00.000Z' },
+    ]);
+    const unscheduled = await publisher.unschedulePosts([target]);
+
+    expect(scheduled.succeeded[0]).toMatchObject({ status: 'scheduled' });
+    expect(unscheduled.succeeded[0]).toMatchObject({ status: 'draft' });
+    expect(edit.mock.calls[0]).toEqual([
+      { ...target, published_at: '2099-01-01T00:00:00.000Z', status: 'scheduled' },
+    ]);
+    expect(edit.mock.calls[1]).toEqual([{ ...target, status: 'draft' }]);
+    expect(JSON.stringify(edit.mock.calls)).not.toContain('newsletter');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('rejects past schedules and preflight failures before writing', async () => {
+    const edit = vi.fn();
+    const read = vi.fn(async () => post({ status: 'published' }));
+    const publisher = new GhostPublisher(baseConfig, { ghost: { posts: { read, edit } } });
+    const target = { id: 'a'.repeat(24), updated_at: '2026-01-01T00:00:00.000Z' };
+
+    await expect(
+      publisher.schedulePosts([{ ...target, published_at: '2020-01-01T00:00:00.000Z' }]),
+    ).rejects.toThrow('must be in the future');
+    const result = await publisher.schedulePosts([{ ...target, published_at: '2099-01-01T00:00:00.000Z' }]);
+
+    expect(result.succeeded).toEqual([]);
+    expect(result.failed).toHaveLength(1);
+    expect(edit).not.toHaveBeenCalled();
   });
 
   it('deploys after a complete transition and checks the configured live URL', async () => {

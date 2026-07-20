@@ -15,7 +15,7 @@ const config: Config = {
   uploadRoots: [],
 };
 
-function post(status: 'draft' | 'published' = 'published') {
+function post(status: 'draft' | 'published' | 'scheduled' = 'published') {
   return {
     id,
     title: 'Published post',
@@ -37,7 +37,7 @@ async function connect(publisher: GhostPublisher) {
 }
 
 describe('MCP contract', () => {
-  it('advertises twelve normal tools, requires literal destructive confirmation, and redacts errors', async () => {
+  it('advertises fifteen normal tools, requires literal destructive confirmation, and redacts errors', async () => {
     const edit = vi.fn(async () => {
       throw new Error(`Ghost rejected ${config.ghostAdminApiKey}`);
     });
@@ -50,13 +50,20 @@ describe('MCP contract', () => {
     const { client, server } = await connect(publisher);
 
     const tools = await client.listTools();
-    expect(tools.tools.map((tool) => tool.name)).toHaveLength(12);
+    expect(tools.tools.map((tool) => tool.name)).toHaveLength(15);
     expect(tools.tools.map((tool) => tool.name)).not.toContain('generate_image');
     expect(tools.tools.map((tool) => tool.name)).toContain('publish_posts');
     expect(tools.tools.find((tool) => tool.name === 'update_published_post')?.annotations).toMatchObject({
       destructiveHint: true,
     });
-    for (const name of ['update_published_post', 'publish_posts', 'unpublish_posts', 'trigger_deploy']) {
+    for (const name of [
+      'update_published_post',
+      'publish_posts',
+      'unpublish_posts',
+      'schedule_posts',
+      'unschedule_posts',
+      'trigger_deploy',
+    ]) {
       const schema = JSON.stringify(tools.tools.find((tool) => tool.name === name)?.inputSchema);
       expect(schema).toContain('user_confirmed');
       expect(schema).toContain('true');
@@ -140,12 +147,25 @@ describe('MCP contract', () => {
       arguments: { user_confirmed: true },
     });
     expect(JSON.stringify(deployAccepted.content)).not.toContain('Invalid arguments');
+    const scheduleAccepted = await client.callTool({
+      name: 'schedule_posts',
+      arguments: {
+        posts: [{ id, updated_at: updatedAt, published_at: '2099-01-01T00:00:00.000Z' }],
+        user_confirmed: true,
+      },
+    });
+    expect(JSON.stringify(scheduleAccepted.content)).not.toContain('Invalid arguments');
+    const unscheduleAccepted = await client.callTool({
+      name: 'unschedule_posts',
+      arguments: { posts: [{ id, updated_at: updatedAt }], user_confirmed: true },
+    });
+    expect(JSON.stringify(unscheduleAccepted.content)).not.toContain('Invalid arguments');
 
     await client.close();
     await server.close();
   });
 
-  it('advertises exactly five tools in read-only mode', async () => {
+  it('advertises exactly six tools in read-only mode', async () => {
     const publisher = new GhostPublisher(
       { ...config, readOnly: true },
       { ghost: { site: { read: async () => ({}) }, posts: {}, tags: {} } },
@@ -154,7 +174,7 @@ describe('MCP contract', () => {
 
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name).sort()).toEqual(
-      ['check_connection', 'list_posts', 'get_post', 'list_tags', 'check_live_posts'].sort(),
+      ['check_connection', 'list_posts', 'get_post', 'list_tags', 'list_authors', 'check_live_posts'].sort(),
     );
 
     await client.close();
@@ -177,6 +197,11 @@ describe('MCP contract', () => {
       },
       { name: 'publish_posts', arguments: { posts: [{ id, updated_at: updatedAt }] } },
       { name: 'unpublish_posts', arguments: { posts: [{ id, updated_at: updatedAt }] } },
+      {
+        name: 'schedule_posts',
+        arguments: { posts: [{ id, updated_at: updatedAt, published_at: '2099-01-01T00:00:00.000Z' }] },
+      },
+      { name: 'unschedule_posts', arguments: { posts: [{ id, updated_at: updatedAt }] } },
       { name: 'trigger_deploy', arguments: {} },
     ];
 

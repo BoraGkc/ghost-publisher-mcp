@@ -79,29 +79,67 @@ try {
   assert.equal(image.mime_type, 'image/png');
   assert.match(image.url, /^https?:\/\//);
 
+  const authors = await publisher.listAuthors({ limit: 50, page: 1 });
+  const owner = authors.authors.find((author) => author.name === 'Integration Owner');
+  assert.match(owner?.id, /^[a-f\d]{24}$/i);
+
   const slug = `ghost-publisher-integration-${Date.now()}`;
-  const batch = await publisher.createDrafts([{ title: 'Integration draft', slug, markdown: '# It works' }]);
+  const batch = await publisher.createDrafts([
+    {
+      title: 'Integration draft',
+      slug,
+      markdown: '# It works',
+      authors: [owner.id],
+      excerpt: 'Metadata to clear',
+    },
+  ]);
   assert.equal(batch.failed.length, 0);
   created = batch.succeeded[0];
   assert.equal(created.status, 'draft');
+  assert.deepEqual(created.authors.map((author) => author.id), [owner.id]);
 
   const updated = await publisher.updateDraft({
     id: created.id,
     updated_at: created.updated_at,
-    excerpt: 'Updated through optimistic locking',
+    excerpt: null,
+    feature_image_url: image.url,
+    tags: [],
+    authors: [owner.id],
   });
-  const published = await publisher.transitionPosts([{ id: updated.id, updated_at: updated.updated_at }], 'published');
+  const scheduled = await publisher.schedulePosts([
+    {
+      id: updated.id,
+      updated_at: updated.updated_at,
+      published_at: new Date(Date.now() + 60 * 60 * 1_000).toISOString(),
+    },
+  ]);
+  assert.equal(scheduled.succeeded[0]?.status, 'scheduled');
+  const unscheduled = await publisher.unschedulePosts([
+    { id: scheduled.succeeded[0].id, updated_at: scheduled.succeeded[0].updated_at },
+  ]);
+  assert.equal(unscheduled.succeeded[0]?.status, 'draft');
+  const draftDetails = await publisher.getPost(unscheduled.succeeded[0].id);
+  assert.equal(draftDetails.custom_excerpt, null);
+  assert.equal(draftDetails.feature_image, image.url);
+  assert.deepEqual(draftDetails.authors.map((author) => author.id), [owner.id]);
+
+  const published = await publisher.transitionPosts(
+    [{ id: draftDetails.id, updated_at: draftDetails.updated_at }],
+    'published',
+  );
   assert.equal(published.succeeded[0]?.status, 'published');
   const publishedDetails = await publisher.getPost(published.succeeded[0].id);
   const optimized = await publisher.updatePublishedPost({
     id: publishedDetails.id,
     updated_at: publishedDetails.updated_at,
+    feature_image_url: null,
     meta_title: 'Integration SEO title',
     meta_description: 'Updated published SEO metadata',
   });
   assert.equal(optimized.status, 'published');
   const optimizedDetails = await publisher.getPost(optimized.id);
   assert.equal(optimizedDetails.status, 'published');
+  assert.equal(optimizedDetails.feature_image, null);
   assert.equal(optimizedDetails.meta_title, 'Integration SEO title');
   assert.equal(optimizedDetails.meta_description, 'Updated published SEO metadata');
   assert.match(optimizedDetails.html, /It works/);

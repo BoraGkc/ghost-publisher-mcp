@@ -1,3 +1,9 @@
+export type AuthorRef = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
 export type PostRef = {
   id: string;
   title: string;
@@ -8,6 +14,7 @@ export type PostRef = {
   published_at?: string;
   custom_excerpt?: string;
   tags: string[];
+  authors: AuthorRef[];
 };
 
 export type FailedItem = {
@@ -42,25 +49,27 @@ export type DraftInput = {
   markdown: string;
   slug?: string;
   tags?: string[];
-  excerpt?: string;
+  authors?: string[];
+  excerpt?: string | null;
   featured?: boolean;
-  feature_image_url?: string;
-  feature_image_alt?: string;
-  feature_image_caption?: string;
-  meta_title?: string;
-  meta_description?: string;
-  canonical_url?: string;
-  og_title?: string;
-  og_description?: string;
-  og_image?: string;
-  twitter_title?: string;
-  twitter_description?: string;
-  twitter_image?: string;
+  feature_image_url?: string | null;
+  feature_image_alt?: string | null;
+  feature_image_caption?: string | null;
+  meta_title?: string | null;
+  meta_description?: string | null;
+  canonical_url?: string | null;
+  og_title?: string | null;
+  og_description?: string | null;
+  og_image?: string | null;
+  twitter_title?: string | null;
+  twitter_description?: string | null;
+  twitter_image?: string | null;
 };
 
 export type PublishedPostPatch = {
   title?: string;
   excerpt?: string | null;
+  feature_image_url?: string | null;
   feature_image_alt?: string | null;
   feature_image_caption?: string | null;
   meta_title?: string | null;

@@ -17,6 +17,9 @@ type Dependencies = {
 };
 
 type TransitionTarget = { id: string; updated_at: string };
+type ScheduleTarget = TransitionTarget & { published_at: string };
+type PostStatus = 'draft' | 'published' | 'scheduled';
+type PostOrder = 'updated_at_desc' | 'updated_at_asc' | 'published_at_desc' | 'published_at_asc';
 
 export function slugify(value: string): string {
   return value
@@ -59,6 +62,13 @@ function postRef(post: any): PostRef {
     status: String(post.status ?? ''),
     updated_at: String(post.updated_at ?? ''),
     tags: Array.isArray(post.tags) ? post.tags.map((tag: any) => String(tag.name)) : [],
+    authors: Array.isArray(post.authors)
+      ? post.authors.map((author: any) => ({
+          id: String(author.id),
+          name: String(author.name ?? ''),
+          slug: String(author.slug ?? ''),
+        }))
+      : [],
     ...(post.url ? { url: String(post.url) } : {}),
     ...(post.published_at ? { published_at: String(post.published_at) } : {}),
     ...(post.custom_excerpt ? { custom_excerpt: String(post.custom_excerpt) } : {}),
@@ -70,6 +80,7 @@ type GhostFieldInput = {
   markdown?: string;
   slug?: string;
   tags?: string[];
+  authors?: string[];
   excerpt?: string | null;
   featured?: boolean;
   feature_image_url?: string | null;
@@ -91,7 +102,8 @@ function ghostFields(input: GhostFieldInput): Record<string, unknown> {
     ...(input.title !== undefined ? { title: input.title } : {}),
     ...(input.slug !== undefined ? { slug: input.slug } : {}),
     ...(input.markdown !== undefined ? { html: markdown.render(input.markdown) } : {}),
-    ...(input.tags ? { tags: input.tags.map((name) => ({ name })) } : {}),
+    ...(input.tags !== undefined ? { tags: input.tags.map((name) => ({ name })) } : {}),
+    ...(input.authors !== undefined ? { authors: input.authors.map((id) => ({ id })) } : {}),
     ...(input.excerpt !== undefined ? { custom_excerpt: input.excerpt } : {}),
     ...(input.featured !== undefined ? { featured: input.featured } : {}),
     ...(input.feature_image_url !== undefined ? { feature_image: input.feature_image_url } : {}),
@@ -148,6 +160,12 @@ export class GhostPublisher {
     status?: 'draft' | 'published' | 'scheduled' | 'all';
     tag?: string;
     search?: string;
+    author_id?: string;
+    updated_after?: string;
+    updated_before?: string;
+    published_after?: string;
+    published_before?: string;
+    order?: PostOrder;
     limit: number;
     page: number;
   }) {
@@ -155,11 +173,22 @@ export class GhostPublisher {
     if (options.status && options.status !== 'all') filters.push(`status:${options.status}`);
     if (options.tag) filters.push(`tag:${slugify(options.tag)}`);
     if (options.search) filters.push(`title:~'${nql(options.search)}'`);
+    if (options.author_id) filters.push(`authors.id:${options.author_id}`);
+    if (options.updated_after) filters.push(`updated_at:>'${nql(options.updated_after)}'`);
+    if (options.updated_before) filters.push(`updated_at:<'${nql(options.updated_before)}'`);
+    if (options.published_after) filters.push(`published_at:>'${nql(options.published_after)}'`);
+    if (options.published_before) filters.push(`published_at:<'${nql(options.published_before)}'`);
+    const order = {
+      updated_at_desc: 'updated_at desc',
+      updated_at_asc: 'updated_at asc',
+      published_at_desc: 'published_at desc',
+      published_at_asc: 'published_at asc',
+    }[options.order ?? 'updated_at_desc'];
     const rows = await this.ghost.posts.browse({
       limit: Math.min(options.limit, 50),
       page: options.page,
-      order: 'updated_at desc',
-      include: 'tags',
+      order,
+      include: 'tags,authors',
       ...(filters.length ? { filter: filters.join('+') } : {}),
     });
     return { posts: Array.from(rows, postRef), meta: rows.meta ?? {} };
@@ -169,7 +198,7 @@ export class GhostPublisher {
     const byId = /^[a-f\d]{24}$/i.test(idOrSlug);
     const post = await this.ghost.posts.read(
       byId ? { id: idOrSlug } : { slug: idOrSlug },
-      { formats: ['html', 'lexical'], include: 'tags' },
+      { formats: ['html', 'lexical'], include: 'tags,authors' },
     );
     return {
       ...postRef(post),
@@ -206,6 +235,26 @@ export class GhostPublisher {
         name: String(tag.name),
         slug: String(tag.slug),
         count: Number(tag.count?.posts ?? 0),
+      })),
+      meta: rows.meta ?? {},
+    };
+  }
+
+  async listAuthors(options: { search?: string; limit: number; page: number }) {
+    const rows = await this.ghost.users.browse({
+      limit: Math.min(options.limit, 50),
+      page: options.page,
+      order: 'name asc',
+      include: 'count.posts',
+      ...(options.search ? { filter: `name:~'${nql(options.search)}'` } : {}),
+    });
+    return {
+      authors: Array.from(rows, (author: any) => ({
+        id: String(author.id),
+        name: String(author.name ?? ''),
+        slug: String(author.slug ?? ''),
+        ...(author.url ? { url: String(author.url) } : {}),
+        count: Number(author.count?.posts ?? 0),
       })),
       meta: rows.meta ?? {},
     };
@@ -256,7 +305,7 @@ export class GhostPublisher {
     if (input.markdown !== undefined && input.body_replacement_confirmed !== true) {
       throw new Error('Replacing a draft body requires body_replacement_confirmed=true');
     }
-    const current = await this.ghost.posts.read({ id: input.id }, { formats: 'html', include: 'tags' });
+    const current = await this.ghost.posts.read({ id: input.id }, { formats: 'html', include: 'tags,authors' });
     if (current.status !== 'draft') throw new Error('update_draft only accepts draft posts');
     if (String(current.updated_at) !== input.updated_at) {
       throw new Error('Draft changed since it was read; fetch it again before updating');
@@ -274,7 +323,7 @@ export class GhostPublisher {
     if ('markdown' in input || 'html' in input || 'lexical' in input) {
       throw new Error('Published article bodies are read-only');
     }
-    const current = await this.ghost.posts.read({ id: input.id }, { include: 'tags' });
+    const current = await this.ghost.posts.read({ id: input.id }, { include: 'tags,authors' });
     if (current.status !== 'published') throw new Error('update_published_post only accepts published posts');
     if (String(current.updated_at) !== input.updated_at) {
       throw new Error('Post changed since it was read; fetch it again before updating');
@@ -288,13 +337,13 @@ export class GhostPublisher {
 
   private async validateTransitions(
     targets: TransitionTarget[],
-    expectedStatus: 'draft' | 'published',
+    expectedStatus: PostStatus,
   ): Promise<{ posts: any[]; errors: Map<string, string> }> {
     const errors = new Map<string, string>();
     const posts = await Promise.all(
       targets.map(async (target) => {
         try {
-          const post = await this.ghost.posts.read({ id: target.id }, { include: 'tags' });
+          const post = await this.ghost.posts.read({ id: target.id }, { include: 'tags,authors' });
           if (post.status !== expectedStatus) {
             errors.set(target.id, `Expected ${expectedStatus}, found ${String(post.status)}`);
           } else if (String(post.updated_at) !== target.updated_at) {
@@ -310,15 +359,16 @@ export class GhostPublisher {
     return { posts, errors };
   }
 
-  async transitionPosts(
-    targets: TransitionTarget[],
-    status: 'draft' | 'published',
+  private async editPostBatch<T extends TransitionTarget>(
+    targets: T[],
+    expectedStatus: PostStatus,
+    edit: (target: T) => Record<string, unknown>,
+    deploy: boolean,
   ): Promise<BatchResult> {
     if (new Set(targets.map((target) => target.id)).size !== targets.length) {
       throw new Error('Post IDs must be unique within the batch');
     }
-    const expected = status === 'published' ? 'draft' : 'published';
-    const preflight = await this.validateTransitions(targets, expected);
+    const preflight = await this.validateTransitions(targets, expectedStatus);
     if (preflight.errors.size) {
       return {
         succeeded: [],
@@ -334,8 +384,7 @@ export class GhostPublisher {
     for (let index = 0; index < targets.length; index += 1) {
       const target = targets[index]!;
       try {
-        const updated = await this.ghost.posts.edit({ ...target, status });
-        result.succeeded.push(postRef(updated));
+        result.succeeded.push(postRef(await this.ghost.posts.edit(edit(target))));
       } catch (error) {
         result.failed.push({ id: target.id, error: errorMessage(error, this.config) });
         for (const remaining of targets.slice(index + 1)) {
@@ -345,8 +394,35 @@ export class GhostPublisher {
       }
     }
     result.partial_failure = result.succeeded.length > 0 && result.failed.length > 0;
-    if (!result.failed.length && this.config.deployHookUrl) result.deploy = await this.triggerDeploy();
+    if (deploy && !result.failed.length && this.config.deployHookUrl) result.deploy = await this.triggerDeploy();
     return result;
+  }
+
+  async transitionPosts(
+    targets: TransitionTarget[],
+    status: 'draft' | 'published',
+  ): Promise<BatchResult> {
+    const expected = status === 'published' ? 'draft' : 'published';
+    return this.editPostBatch(targets, expected, (target) => ({ ...target, status }), true);
+  }
+
+  async schedulePosts(targets: ScheduleTarget[]): Promise<BatchResult> {
+    if (targets.some((target) => !Number.isFinite(Date.parse(target.published_at)))) {
+      throw new Error('Scheduled publication timestamps must be valid');
+    }
+    if (targets.some((target) => Date.parse(target.published_at) <= Date.now())) {
+      throw new Error('Scheduled publication timestamps must be in the future');
+    }
+    return this.editPostBatch(
+      targets,
+      'draft',
+      (target) => ({ ...target, status: 'scheduled' }),
+      false,
+    );
+  }
+
+  async unschedulePosts(targets: TransitionTarget[]): Promise<BatchResult> {
+    return this.editPostBatch(targets, 'scheduled', (target) => ({ ...target, status: 'draft' }), false);
   }
 
   async uploadImage(filePath: string): Promise<ImageAsset> {

@@ -13,6 +13,7 @@ const postRefSchema = z.object({
   published_at: z.string().optional(),
   custom_excerpt: z.string().optional(),
   tags: z.array(z.string()),
+  authors: z.array(z.object({ id: z.string(), name: z.string(), slug: z.string() })),
 });
 
 const postDetailsSchema = postRefSchema.omit({ custom_excerpt: true }).extend({
@@ -68,12 +69,22 @@ const slugSchema = z
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must contain lowercase ASCII words separated by hyphens');
 
 const ghostIdSchema = z.string().regex(/^[a-f\d]{24}$/i, 'Expected a 24-character Ghost ID');
+const timestampSchema = z.iso.datetime({ offset: true });
+const authorsSchema = z
+  .array(ghostIdSchema)
+  .min(1)
+  .max(10)
+  .refine((authors) => new Set(authors).size === authors.length, 'Author IDs must be unique');
+
+const nullableText = (max: number) => z.string().max(max).nullable();
+const nullableUrl = z.url().nullable();
 
 const draftSchema = z.object({
   title: z.string().min(1).max(300),
   markdown: z.string().min(1),
   slug: slugSchema.optional(),
   tags: z.array(z.string().min(1).max(191)).max(20).optional(),
+  authors: authorsSchema.optional(),
   excerpt: z.string().max(500).optional(),
   featured: z.boolean().optional(),
   feature_image_url: z.url().optional(),
@@ -90,9 +101,24 @@ const draftSchema = z.object({
   twitter_image: z.url().optional(),
 });
 
-const draftPatchSchema = draftSchema.partial().refine((patch) => Object.keys(patch).length > 0, {
-  message: 'Provide at least one field to update',
-});
+const draftPatchSchema = draftSchema
+  .partial()
+  .extend({
+    excerpt: nullableText(500).optional(),
+    feature_image_url: nullableUrl.optional(),
+    feature_image_alt: nullableText(500).optional(),
+    feature_image_caption: nullableText(1000).optional(),
+    meta_title: nullableText(300).optional(),
+    meta_description: nullableText(500).optional(),
+    canonical_url: nullableUrl.optional(),
+    og_title: nullableText(300).optional(),
+    og_description: nullableText(500).optional(),
+    og_image: nullableUrl.optional(),
+    twitter_title: nullableText(300).optional(),
+    twitter_description: nullableText(500).optional(),
+    twitter_image: nullableUrl.optional(),
+  })
+  .refine((patch) => Object.keys(patch).length > 0, { message: 'Provide at least one field to update' });
 
 const updateDraftSchema = z
   .object({
@@ -106,11 +132,11 @@ const updateDraftSchema = z
     path: ['body_replacement_confirmed'],
   });
 
-const nullableText = (max: number) => z.string().max(max).nullable();
 const publishedPatchSchema = z
   .object({
     title: z.string().min(1).max(300).optional(),
     excerpt: nullableText(500).optional(),
+    feature_image_url: nullableUrl.optional(),
     feature_image_alt: nullableText(500).optional(),
     feature_image_caption: nullableText(1000).optional(),
     meta_title: nullableText(300).optional(),
@@ -131,6 +157,35 @@ const targetSchema = z.object({
   updated_at: z.string().min(1),
 });
 
+const listContentSchema = z
+  .object({
+    status: z.enum(['draft', 'published', 'scheduled', 'all']).default('all'),
+    tag: z.string().min(1).optional(),
+    search: z.string().min(1).optional(),
+    author_id: ghostIdSchema.optional(),
+    updated_after: timestampSchema.optional(),
+    updated_before: timestampSchema.optional(),
+    published_after: timestampSchema.optional(),
+    published_before: timestampSchema.optional(),
+    order: z
+      .enum(['updated_at_desc', 'updated_at_asc', 'published_at_desc', 'published_at_asc'])
+      .default('updated_at_desc'),
+    limit: z.number().int().min(1).max(50).default(15),
+    page: z.number().int().min(1).default(1),
+  })
+  .superRefine((input, context) => {
+    for (const [after, before, path] of [
+      [input.updated_after, input.updated_before, 'updated_before'],
+      [input.published_after, input.published_before, 'published_before'],
+    ] as const) {
+      if (after && before && Date.parse(after) >= Date.parse(before)) {
+        context.addIssue({ code: 'custom', message: 'The before timestamp must be later than after', path: [path] });
+      }
+    }
+  });
+
+const scheduleTargetSchema = targetSchema.extend({ published_at: timestampSchema });
+
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
 const write = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
 const destructive = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
@@ -150,10 +205,10 @@ function failure(error: unknown, config: Config) {
 
 export function createServer(publisher: GhostPublisher): McpServer {
   const server = new McpServer(
-    { name: 'ghost-publisher-mcp', version: '0.2.1' },
+    { name: 'ghost-publisher-mcp', version: '0.3.0' },
     {
       instructions:
-        'Create drafts first. Before updating, publishing, or unpublishing, read posts and pass exact id and updated_at values. Destructive tools require user_confirmed=true after explicit approval for the exact action. Markdown draft updates replace the complete body and require body_replacement_confirmed=true. Successful publish and unpublish batches deploy exactly once when configured; published metadata updates require one separate approved trigger_deploy call. When the AI client generates an image, save it locally, call upload_image, then attach its URL with create_drafts or update_draft.',
+        'Create drafts first. Before updating, publishing, scheduling, or unpublishing, read posts and pass exact id and updated_at values. Destructive tools require user_confirmed=true after explicit approval for the exact action. Markdown draft updates replace the complete body and require body_replacement_confirmed=true. Successful publish and unpublish batches deploy exactly once when configured; scheduling never deploys or sends newsletters. Published metadata updates require one separate approved trigger_deploy call.',
     },
   );
   const fail = (error: unknown) => failure(error, publisher.config);
@@ -192,13 +247,7 @@ export function createServer(publisher: GhostPublisher): McpServer {
     {
       title: 'List Ghost posts',
       description: 'List concise Ghost post records. Use this before updating or publishing to obtain exact IDs and updated_at values.',
-      inputSchema: z.object({
-        status: z.enum(['draft', 'published', 'scheduled', 'all']).default('all'),
-        tag: z.string().min(1).optional(),
-        search: z.string().min(1).optional(),
-        limit: z.number().int().min(1).max(50).default(15),
-        page: z.number().int().min(1).default(1),
-      }),
+      inputSchema: listContentSchema,
       outputSchema: z.object({ posts: z.array(postRefSchema), meta: z.record(z.string(), z.unknown()) }),
       annotations: readOnly,
     },
@@ -251,6 +300,34 @@ export function createServer(publisher: GhostPublisher): McpServer {
       try {
         const data = await publisher.listTags(input);
         return success(data, `${data.tags.length} tag(s) found`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'list_authors',
+    {
+      title: 'List Ghost authors',
+      description: 'List bounded public author identities and post counts without exposing staff email or roles.',
+      inputSchema: z.object({
+        search: z.string().min(1).optional(),
+        limit: z.number().int().min(1).max(50).default(50),
+        page: z.number().int().min(1).default(1),
+      }),
+      outputSchema: z.object({
+        authors: z.array(
+          z.object({ id: z.string(), name: z.string(), slug: z.string(), url: z.string().optional(), count: z.number() }),
+        ),
+        meta: z.record(z.string(), z.unknown()),
+      }),
+      annotations: readOnly,
+    },
+    async (input) => {
+      try {
+        const data = await publisher.listAuthors(input);
+        return success(data, `${data.authors.length} author(s) found`);
       } catch (error) {
         return fail(error);
       }
@@ -364,6 +441,47 @@ export function createServer(publisher: GhostPublisher): McpServer {
         },
       );
     }
+
+    server.registerTool(
+      'schedule_posts',
+      {
+        title: 'Schedule Ghost posts',
+        description: 'Schedule exact current drafts for future web publication. Requires user_confirmed=true and never sends newsletters or triggers deployment.',
+        inputSchema: z.object({
+          posts: z.array(scheduleTargetSchema).min(1).max(25),
+          user_confirmed: z.literal(true),
+        }),
+        outputSchema: batchSchema,
+        annotations: destructive,
+      },
+      async ({ posts }) => {
+        try {
+          const data = await publisher.schedulePosts(posts);
+          return success(data, `${data.succeeded.length} scheduled, ${data.failed.length} failed`);
+        } catch (error) {
+          return fail(error);
+        }
+      },
+    );
+
+    server.registerTool(
+      'unschedule_posts',
+      {
+        title: 'Unschedule Ghost posts',
+        description: 'Return exact current scheduled posts to draft. Requires user_confirmed=true and never triggers deployment.',
+        inputSchema: z.object({ posts: z.array(targetSchema).min(1).max(25), user_confirmed: z.literal(true) }),
+        outputSchema: batchSchema,
+        annotations: destructive,
+      },
+      async ({ posts }) => {
+        try {
+          const data = await publisher.unschedulePosts(posts);
+          return success(data, `${data.succeeded.length} unscheduled, ${data.failed.length} failed`);
+        } catch (error) {
+          return fail(error);
+        }
+      },
+    );
 
     server.registerTool(
       'trigger_deploy',
