@@ -1,4 +1,5 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -187,5 +188,49 @@ describe('setup CLI', () => {
       ),
     ).rejects.toThrow();
     expect(await readFile(cursor, 'utf8')).toBe(original);
+  });
+
+  it('removes a partially written new Codex configuration when native setup fails', async () => {
+    const directory = await home();
+    const codexConfig = path.join(directory, '.codex', 'config.toml');
+    const io = streams();
+    const failingCodex = (command: string, args: string[]) => {
+      if (command === 'which') {
+        if (args[0] === 'npx') return { status: 0, stdout: '/usr/local/bin/npx\n', stderr: '' };
+        if (args[0] === 'codex') return { status: 0, stdout: '/usr/local/bin/codex\n', stderr: '' };
+      }
+      if (command === '/usr/local/bin/codex' && args.slice(0, 3).join(' ') === 'mcp get ghost-publisher') {
+        return { status: 1, stdout: '', stderr: 'MCP server not found' };
+      }
+      if (command === '/usr/local/bin/codex' && args.slice(0, 3).join(' ') === 'mcp add ghost-publisher') {
+        mkdirSync(path.dirname(codexConfig), { recursive: true });
+        writeFileSync(codexConfig, `partial ${key}`);
+        return { status: 1, stdout: '', stderr: `failed after writing ${key}` };
+      }
+      return { status: 1, stdout: '', stderr: 'unexpected command' };
+    };
+
+    await expect(
+      runSetup(
+        [
+          '--url',
+          'https://example.com',
+          '--client',
+          'codex',
+          '--key-env',
+          'TEST_GHOST_KEY',
+          '--skip-connection-check',
+          '--yes',
+        ],
+        {
+          env: { HOME: directory, TEST_GHOST_KEY: key },
+          platform: 'linux',
+          run: failingCodex,
+          ...io,
+        },
+      ),
+    ).rejects.toThrow('Codex setup failed: failed after writing [REDACTED]');
+    await expect(readFile(codexConfig)).rejects.toThrow();
+    expect(io.text()).not.toContain(key);
   });
 });

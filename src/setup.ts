@@ -289,16 +289,26 @@ async function atomicJson(state: JsonState, desired: SetupEntry): Promise<void> 
   const servers = plainObject(state.document.mcpServers) ? state.document.mcpServers : {};
   const next = { ...state.document, mcpServers: { ...servers, [SERVER_NAME]: desired } };
   const temporary = `${state.file}.${process.pid}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: privateMode(state.mode) });
-  await rename(temporary, state.file);
-  if (process.platform !== 'win32') await chmod(state.file, privateMode(state.mode));
+  try {
+    await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: privateMode(state.mode) });
+    await rename(temporary, state.file);
+    if (process.platform !== 'win32') await chmod(state.file, privateMode(state.mode));
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function restoreJson(state: JsonState): Promise<void> {
   if (state.existed && state.original) {
     const temporary = `${state.file}.${process.pid}.restore`;
-    await writeFile(temporary, state.original, { mode: privateMode(state.mode) });
-    await rename(temporary, state.file);
+    try {
+      await writeFile(temporary, state.original, { mode: privateMode(state.mode) });
+      await rename(temporary, state.file);
+      if (process.platform !== 'win32') await chmod(state.file, privateMode(state.mode));
+    } finally {
+      await rm(temporary, { force: true }).catch(() => undefined);
+    }
   } else {
     await rm(state.file, { force: true });
     if (!state.directoryExisted) {
@@ -403,20 +413,20 @@ export async function runSetup(args: string[], dependencies: SetupDependencies =
     const codexOriginal = codexExisted ? await readFile(codexConfig) : undefined;
     const codexMode = codexExisted ? (await stat(codexConfig)).mode & 0o777 : undefined;
     const changedJson: JsonState[] = [];
-    let changedCodex = false;
+    let attemptedCodex = false;
     try {
       for (const state of jsonStates) {
         if (state.state === 'same') continue;
-        await atomicJson(state, desired);
         changedJson.push(state);
+        await atomicJson(state, desired);
       }
       if (codex && currentCodex !== 'same') {
+        attemptedCodex = true;
         if (currentCodex === 'conflict') {
           const removed = run(codex, ['mcp', 'remove', SERVER_NAME]);
           if (removed.status !== 0) throw new Error(`Cannot replace Codex entry: ${removed.stderr.trim()}`);
         }
         addCodex(codex, desired, run);
-        changedCodex = true;
       }
       for (const state of jsonStates) {
         const readback = await readJsonState(state.client, state.file, desired);
@@ -426,15 +436,34 @@ export async function runSetup(args: string[], dependencies: SetupDependencies =
         throw new Error('Codex configuration verification failed');
       }
     } catch (error) {
-      for (const state of changedJson.reverse()) await restoreJson(state);
-      if (changedCodex || currentCodex === 'conflict') {
-        if (codexExisted && codexOriginal) {
-          await mkdir(codexHome, { recursive: true, mode: 0o700 });
-          await writeFile(codexConfig, codexOriginal, { mode: privateMode(codexMode) });
-        } else {
-          await rm(codexConfig, { force: true });
+      let rollbackFailed = false;
+      for (const state of changedJson.reverse()) {
+        try {
+          await restoreJson(state);
+        } catch {
+          rollbackFailed = true;
         }
       }
+      try {
+        if (attemptedCodex) {
+          if (codexExisted && codexOriginal) {
+            await mkdir(codexHome, { recursive: true, mode: 0o700 });
+            const temporary = `${codexConfig}.${process.pid}.restore`;
+            try {
+              await writeFile(temporary, codexOriginal, { mode: privateMode(codexMode) });
+              await rename(temporary, codexConfig);
+              if (process.platform !== 'win32') await chmod(codexConfig, privateMode(codexMode));
+            } finally {
+              await rm(temporary, { force: true }).catch(() => undefined);
+            }
+          } else {
+            await rm(codexConfig, { force: true });
+          }
+        }
+      } catch {
+        rollbackFailed = true;
+      }
+      if (rollbackFailed) throw new Error(`${error instanceof Error ? error.message : String(error)}; rollback was incomplete`);
       throw error;
     }
 
